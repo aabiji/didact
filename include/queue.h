@@ -1,10 +1,10 @@
 #pragma once
 
+#include <stdint.h>
 #include <condition_variable>
 #include <list>
 #include <mutex>
 #include <shared_mutex>
-#include <stdint.h>
 
 using Lock = std::shared_mutex;
 using WriteLock = std::unique_lock<Lock>;
@@ -12,12 +12,12 @@ using ReadLock = std::shared_lock<Lock>;
 using ConditionVar = std::condition_variable_any;
 
 struct SampleChunk {
-  uint8_t *data;
+  uint8_t* data;
   int num_samples;
 };
 
 class SampleQueue {
-public:
+ public:
   SampleQueue(int max_samples, int chunk_samples, int sample_bytes);
 
   bool is_full();
@@ -28,7 +28,7 @@ public:
 
   // Push a variable number of samples to the queue.
   // This will block until there's enough space in the queue.
-  void push(uint8_t *samples, int num_samples);
+  void push(uint8_t* samples, int num_samples);
 
   // Read back samples from the queue in a fixed sized chunk.
   // This will block until there is a valid chunk in the queue.
@@ -36,7 +36,7 @@ public:
   // refered to by the chunk.
   SampleChunk pop(bool allow_partial_chunk);
 
-private:
+ private:
   bool can_write(int samples_to_write);
   bool can_read(bool allow_partial);
 

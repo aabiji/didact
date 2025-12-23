@@ -1,8 +1,7 @@
 #include "queue.h"
 #include <cmath>
 
-SampleQueue::SampleQueue(
-  int max_samples, int chunk_samples, int sample_bytes) {
+SampleQueue::SampleQueue(int max_samples, int chunk_samples, int sample_bytes) {
   m_sample_bytes = sample_bytes;
   m_chunk_samples = chunk_samples;
   m_max_chunks = std::ceil(max_samples / chunk_samples);
@@ -15,14 +14,12 @@ bool SampleQueue::is_full() {
 
 bool SampleQueue::partial_chunk_remaining() {
   ReadLock read_lock(m_lock);
-  return m_chunks.size() == 1 &&
-         m_chunks.front().num_samples < m_chunk_samples;
+  return m_chunks.size() == 1 && m_chunks.front().num_samples < m_chunk_samples;
 }
 
 bool SampleQueue::can_read(bool allow_partial) {
   bool has_front = !m_chunks.empty();
-  bool partial =
-    has_front && m_chunks.front().num_samples < m_chunk_samples;
+  bool partial = has_front && m_chunks.front().num_samples < m_chunk_samples;
   return allow_partial ? has_front : !partial;
 }
 
@@ -38,9 +35,8 @@ bool SampleQueue::can_write(int samples_to_write) {
 
 SampleChunk SampleQueue::pop(bool allow_partial_chunk) {
   ReadLock read_lock(m_lock);
-  m_cond_not_empty.wait(read_lock, [&]{
-    return can_read(allow_partial_chunk);
-  });
+  m_cond_not_empty.wait(read_lock,
+                        [&] { return can_read(allow_partial_chunk); });
 
   SampleChunk front = m_chunks.front();
   m_chunks.pop_front();
@@ -50,9 +46,9 @@ SampleChunk SampleQueue::pop(bool allow_partial_chunk) {
   return front;
 }
 
-void SampleQueue::push(uint8_t *samples, int num_samples) {
+void SampleQueue::push(uint8_t* samples, int num_samples) {
   WriteLock write_lock(m_lock);
-  m_cond_not_full.wait(write_lock, [&]{ return can_write(num_samples); });
+  m_cond_not_full.wait(write_lock, [&] { return can_write(num_samples); });
 
   // Fill a potential partially filled chunk
   int samples_read = 0;
@@ -77,7 +73,7 @@ void SampleQueue::push(uint8_t *samples, int num_samples) {
 
     SampleChunk chunk;
     chunk.num_samples = remaining;
-    chunk.data = (uint8_t *)calloc(m_chunk_samples, m_sample_bytes);
+    chunk.data = (uint8_t*)calloc(m_chunk_samples, m_sample_bytes);
     std::copy(samples + src_start, samples + src_end, chunk.data);
 
     m_chunks.push_back(chunk);
