@@ -25,14 +25,19 @@ void panic(const char *message) {
   exit(-1);
 }
 
-void process_audio_buffer(int16_t *buffer) {}
-
 void decode_audio_packet(AVCodecContext *decoder_ctx, SwrContext *swr_ctx,
-                         AVAudioFifo *audio_fifo, AVPacket *packet,
-                         AVFrame *frame, uint8_t **buffer) {
+                         ChunkQueue &queue, AVPacket *packet, AVFrame *frame) {
   int ret = avcodec_send_packet(decoder_ctx, packet);
   if (ret < 0)
     panic("Failed to submit the packet to the decoder");
+
+  int dst_linesize = 0;
+  uint8_t **buffer = nullptr;
+  ret = av_samples_alloc_array_and_samples(&buffer, &dst_linesize,
+                                           CHANNEL_LAYOUT.nb_channels,
+                                           NUM_SAMPLES, SAMPLE_FORMAT, 0);
+  if (ret < 0)
+    panic("Failed to allocate output buffer");
 
   while (true) {
     AVFrame *frame = av_frame_alloc();
@@ -43,28 +48,21 @@ void decode_audio_packet(AVCodecContext *decoder_ctx, SwrContext *swr_ctx,
     else if (ret < 0)
       panic("Failed to decode frame");
 
-    ret = swr_convert(swr_ctx, buffer, NUM_SAMPLES, frame->extended_data,
+    int dst_num_samples = swr_get_out_samples(swr_ctx, frame->nb_samples);
+    ret = swr_convert(swr_ctx, buffer, dst_num_samples, frame->extended_data,
                       frame->nb_samples);
     if (ret < 0)
       panic("Failed to convert the samples");
 
-    // queue audio chunks until we can read fixed sized ones
-    ret = av_audio_fifo_write(audio_fifo, reinterpret_cast<void **>(buffer),
-                              NUM_SAMPLES);
-    if (ret < 0)
-      panic(av_err2str(ret));
-
-    while (av_audio_fifo_size(audio_fifo) >= NUM_SAMPLES) {
-      av_audio_fifo_read(audio_fifo, reinterpret_cast<void **>(buffer),
-                         NUM_SAMPLES);
-      process_audio_buffer(reinterpret_cast<int16_t *>(buffer[0]));
-    }
+    queue.push(buffer[0], dst_num_samples);
   }
+
+  av_freep(buffer);
 }
 
 int main() {
   AVFormatContext *input_ctx = nullptr;
-  const char *audio_path = "../music.mp3";
+  const char *audio_path = "../assets/music.mp3";
 
   if (avformat_open_input(&input_ctx, audio_path, nullptr, nullptr) < 0)
     panic("Failed to read the input file");
@@ -97,26 +95,18 @@ int main() {
   if ((ret = swr_init(swr_ctx)) < 0)
     panic("Failed to initialize SwrContext");
 
-  int dst_linesize = 0;
-  uint8_t **buffer = nullptr;
-  ret = av_samples_alloc_array_and_samples(&buffer, &dst_linesize,
-                                           CHANNEL_LAYOUT.nb_channels,
-                                           NUM_SAMPLES, SAMPLE_FORMAT, 0);
-  if (ret < 0)
-    panic("Failed to allocate output buffer");
-
-  AVAudioFifo *audio_fifo = av_audio_fifo_alloc(
-      SAMPLE_FORMAT, CHANNEL_LAYOUT.nb_channels, NUM_SAMPLES);
-
   AVPacket *packet = av_packet_alloc();
   AVFrame *frame = nullptr;
+
+  ChunkQueue queue(10, NUM_SAMPLES, 2);
 
   while (ret >= 0) {
     if ((ret = av_read_frame(input_ctx, packet)) < 0)
       break;
+    if (queue.is_full())
+      break;
     if (packet->stream_index == audio_stream)
-      decode_audio_packet(decoder_ctx, swr_ctx, audio_fifo, packet, frame,
-                          buffer);
+      decode_audio_packet(decoder_ctx, swr_ctx, queue, packet, frame);
     av_packet_unref(packet);
   }
 
@@ -134,10 +124,8 @@ int main() {
   CloseWindow();
   */
 
-  av_freep(buffer);
   av_packet_free(&packet);
   av_frame_free(&frame);
-  av_audio_fifo_free(audio_fifo);
   swr_free(&swr_ctx);
   avcodec_free_context(&decoder_ctx);
   avformat_close_input(&input_ctx);

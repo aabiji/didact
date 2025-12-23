@@ -14,7 +14,7 @@ https://www.raylib.com/examples/audio/loader.html?name=audio_raw_stream
 
 - whispercpp integration
 - could extend as a cross platform voice notes app with real time ai transcriptions
-  - run as deamon to have voice input
+  - run as deamon to have voice input (start voice recording with configurable start phrase)
   - somehow get audio samples from microphone in real time
 - ffmpeg for reading audio samples from video/real time
 - save recordings + transcripts to disk
