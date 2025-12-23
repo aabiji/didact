@@ -1,8 +1,15 @@
 #pragma once
 
+#include <condition_variable>
 #include <list>
-#include <optional>
+#include <mutex>
+#include <shared_mutex>
 #include <stdint.h>
+
+using Lock = std::shared_mutex;
+using WriteLock = std::unique_lock<Lock>;
+using ReadLock = std::shared_lock<Lock>;
+using ConditionVar = std::condition_variable_any;
 
 struct SampleChunk {
   uint8_t *data;
@@ -11,7 +18,7 @@ struct SampleChunk {
 
 class SampleQueue {
 public:
-  SampleQueue(int max_samples, int samples_per_chunk, int bytes_per_sample);
+  SampleQueue(int max_samples, int chunk_samples, int sample_bytes);
 
   bool is_full();
 
@@ -19,17 +26,26 @@ public:
   // don't make up a full chunk
   bool partial_chunk_remaining();
 
-  // Push a variable number of samples to the queue
+  // Push a variable number of samples to the queue.
+  // This will block until there's enough space in the queue.
   void push(uint8_t *samples, int num_samples);
 
   // Read back samples from the queue in a fixed sized chunk.
+  // This will block until there is a valid chunk in the queue.
   // NOTE: The caller will be responsible for freeing the data
   // refered to by the chunk.
-  std::optional<SampleChunk> pop();
+  SampleChunk pop(bool allow_partial_chunk);
 
 private:
+  bool can_write(int samples_to_write);
+  bool can_read(bool allow_partial);
+
+  Lock m_lock;
+  ConditionVar m_cond_not_full;
+  ConditionVar m_cond_not_empty;
+
   int m_max_chunks;
-  int m_bytes_per_sample;
-  int m_samples_per_chunk;
+  int m_sample_bytes;
+  int m_chunk_samples;
   std::list<SampleChunk> m_chunks;
 };
