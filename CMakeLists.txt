@@ -32,7 +32,7 @@ pkg_check_modules(ffmepg_libav REQUIRED IMPORTED_TARGET
 
 add_executable(${PROJECT_NAME}
     src/main.cpp
-    src/pool.cpp
+    src/queue.cpp
     src/reader.cpp
 )
 target_include_directories(${PROJECT_NAME} PRIVATE include)
