@@ -1,5 +1,6 @@
 #include <raylib.h>
 
+#include <atomic>
 #include <iostream>
 #include <thread>
 
@@ -7,7 +8,9 @@
 
 int main() {
   try {
-    SampleQueue queue(1024 * 3, 1024, 2);
+    std::stop_source stopper;
+
+    SampleQueue queue(stopper.get_token(), 1024 * 3, 1024, 2);
     SampleQueue* queue_ptr = &queue;
 
     AudioDecoder reader("../assets/music.mp3");
@@ -25,6 +28,8 @@ int main() {
     }
 
     CloseWindow();
+
+    stopper.request_stop();
     t1.join();
   } catch (const std::runtime_error& error) {
     std::cout << error.what() << "\n";

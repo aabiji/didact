@@ -1,10 +1,14 @@
 #include "queue.h"
 #include <cmath>
 
-SampleQueue::SampleQueue(int max_samples, int chunk_samples, int sample_bytes) {
+SampleQueue::SampleQueue(std::stop_token token,
+                         int max_samples,
+                         int chunk_samples,
+                         int sample_bytes) {
   m_sample_bytes = sample_bytes;
   m_chunk_samples = chunk_samples;
   m_max_chunks = std::ceil(max_samples / chunk_samples);
+  m_stop_token = token;
 }
 
 bool SampleQueue::is_full() {
@@ -35,7 +39,7 @@ bool SampleQueue::can_write(int samples_to_write) {
 
 SampleChunk SampleQueue::pop(bool allow_partial_chunk) {
   ReadLock read_lock(m_lock);
-  m_cond_not_empty.wait(read_lock,
+  m_cond_not_empty.wait(read_lock, m_stop_token,
                         [&] { return can_read(allow_partial_chunk); });
 
   SampleChunk front = m_chunks.front();
@@ -48,7 +52,8 @@ SampleChunk SampleQueue::pop(bool allow_partial_chunk) {
 
 void SampleQueue::push(uint8_t* samples, int num_samples) {
   WriteLock write_lock(m_lock);
-  m_cond_not_full.wait(write_lock, [&] { return can_write(num_samples); });
+  m_cond_not_full.wait(write_lock, m_stop_token,
+                       [&] { return can_write(num_samples); });
 
   // Fill a potential partially filled chunk
   int samples_read = 0;

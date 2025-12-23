@@ -5,6 +5,7 @@
 #include <list>
 #include <mutex>
 #include <shared_mutex>
+#include <stop_token>
 
 using Lock = std::shared_mutex;
 using WriteLock = std::unique_lock<Lock>;
@@ -18,7 +19,10 @@ struct SampleChunk {
 
 class SampleQueue {
  public:
-  SampleQueue(int max_samples, int chunk_samples, int sample_bytes);
+  SampleQueue(std::stop_token token,
+              int max_samples,
+              int chunk_samples,
+              int sample_bytes);
 
   bool is_full();
 
@@ -43,6 +47,7 @@ class SampleQueue {
   Lock m_lock;
   ConditionVar m_cond_not_full;
   ConditionVar m_cond_not_empty;
+  std::stop_token m_stop_token;
 
   int m_max_chunks;
   int m_sample_bytes;

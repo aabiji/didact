@@ -22,14 +22,18 @@ class AudioDecoder {
   void init_resampler();
 
   void decode_packet(SampleQueue* queue, AVPacket* packet);
-  void resample_audio(AVFrame* frame, uint8_t*** buffer, int* dst_num_samples);
+  void resample_audio(AVFrame* frame, int* dst_num_samples);
 
   struct OutputConfig {
     AVSampleFormat sample_format;
     AVChannelLayout channel_layout;
     int frame_samples;
   } m_output;
+
   int m_audio_stream;
+  int m_max_num_samples;
+  uint8_t** m_pcm_buffer;
+
   SwrContext* m_resampler;
   AVCodecContext* m_codec_ctx;
   AVFormatContext* m_format_ctx;

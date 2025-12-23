@@ -8,13 +8,18 @@ AudioDecoder::~AudioDecoder() {
 }
 
 AudioDecoder::AudioDecoder(const char* file_path) {
-  m_audio_stream = -1;
-  m_resampler = nullptr;
-  m_codec_ctx = nullptr;
-  m_format_ctx = nullptr;
   m_output = {.sample_format = AV_SAMPLE_FMT_S16,
               .channel_layout = AV_CHANNEL_LAYOUT_MONO,
               .frame_samples = 1024};
+
+  m_audio_stream = -1;
+  m_max_num_samples = 0;
+  m_pcm_buffer = nullptr;
+
+  m_resampler = nullptr;
+  m_codec_ctx = nullptr;
+  m_format_ctx = nullptr;
+
   init_codec_ctx(file_path);
   init_resampler();
 }
@@ -58,20 +63,28 @@ void AudioDecoder::init_resampler() {
     throw Error(av_err2str(ret));
 }
 
-void AudioDecoder::resample_audio(AVFrame* frame,
-                                  uint8_t*** buffer,
-                                  int* dst_num_samples) {
-  int dst_linesize = 0;
+void AudioDecoder::resample_audio(AVFrame* frame, int* dst_num_samples) {
   *dst_num_samples = swr_get_out_samples(m_resampler, frame->nb_samples);
 
-  int ret = av_samples_alloc_array_and_samples(
-      buffer, &dst_linesize, m_output.channel_layout.nb_channels,
-      *dst_num_samples, m_output.sample_format, 0);
-  if (ret < 0)
-    throw Error(av_err2str(ret));
+  // Resize the pcm buffer when needed
+  if (*dst_num_samples > m_max_num_samples) {
+    if (m_pcm_buffer) {
+      av_freep(&m_pcm_buffer[0]);
+    }
+    av_freep(&m_pcm_buffer);
 
-  ret = swr_convert(m_resampler, *buffer, *dst_num_samples,
-                    frame->extended_data, frame->nb_samples);
+    int dst_linesize = 0;
+    int ret = av_samples_alloc_array_and_samples(
+        &m_pcm_buffer, &dst_linesize, m_output.channel_layout.nb_channels,
+        *dst_num_samples, m_output.sample_format, 0);
+    if (ret < 0)
+      throw Error(av_err2str(ret));
+
+    m_max_num_samples = *dst_num_samples;
+  }
+
+  int ret = swr_convert(m_resampler, m_pcm_buffer, *dst_num_samples,
+                        frame->extended_data, frame->nb_samples);
   if (ret < 0)
     throw Error(av_err2str(ret));
 }
@@ -91,12 +104,8 @@ void AudioDecoder::decode_packet(SampleQueue* queue, AVPacket* packet) {
       throw Error(av_err2str(ret));
 
     int num_samples = 0;
-    uint8_t** buffer = nullptr;
-
-    resample_audio(frame, &buffer, &num_samples);
-    queue->push(buffer[0], num_samples);
-
-    av_freep(buffer);
+    resample_audio(frame, &num_samples);
+    queue->push(m_pcm_buffer[0], num_samples);
     av_frame_free(&frame);
   }
 }
