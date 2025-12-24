@@ -13,6 +13,7 @@ int main() {
     SampleQueue queue(stopper.get_token(), 1024 * 3, 1024, 2);
     SampleQueue* queue_ptr = &queue;
 
+    // TODO: give this the stop token as well
     AudioDecoder reader("../assets/music.mp3");
     std::thread t1([&] { reader.process_file(queue_ptr); });
 

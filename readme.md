@@ -1,5 +1,4 @@
 
-
 https://stackoverflow.com/questions/6740545/understanding-fft-output
 https://swharden.com/csdv/audio/fft/
 https://dsp.stackexchange.com/questions/40766/calculating-values-of-frequency-bins-in-python
@@ -11,6 +10,7 @@ https://etiand.re/posts/2025/01/how-to-decode-audio-streams-in-c-cpp-using-libav
 https://github.com/mackron/miniaudio
 https://github.com/ggml-org/whisper.cpp
 https://www.raylib.com/examples/audio/loader.html?name=audio_raw_stream
+https://somcosoftware.com/en/blog/qt-qml-tutorials-new-series-by-scythe-studio
 
 - whispercpp integration
 - could extend as a cross platform voice notes app with real time ai transcriptions
@@ -21,9 +21,3 @@ https://www.raylib.com/examples/audio/loader.html?name=audio_raw_stream
 - simple ui to view voice recordings (using qt??? using lvgl???)
 - audio playback
 - live translate feature
-
-4 threads:
-- rendering
-- reading audio frames
-- doing fft
-- whispercpp transcriptions
