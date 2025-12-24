@@ -7,7 +7,12 @@ AudioDecoder::~AudioDecoder() {
   avformat_close_input(&m_format_ctx);
 }
 
-AudioDecoder::AudioDecoder(const char* file_path) {
+AudioDecoder::AudioDecoder(const char* file_path,
+                           SampleQueue* queue,
+                           std::stop_token stop_token) {
+  m_token = stop_token;
+  m_queue = queue;
+
   m_output = {.sample_format = AV_SAMPLE_FMT_S16,
               .channel_layout = AV_CHANNEL_LAYOUT_MONO,
               .frame_samples = 1024};
@@ -89,12 +94,12 @@ void AudioDecoder::resample_audio(AVFrame* frame, int* dst_num_samples) {
     throw Error(av_err2str(ret));
 }
 
-void AudioDecoder::decode_packet(SampleQueue* queue, AVPacket* packet) {
+void AudioDecoder::decode_packet(AVPacket* packet) {
   int ret = avcodec_send_packet(m_codec_ctx, packet);
   if (ret < 0)
     throw Error(av_err2str(ret));
 
-  while (true) {
+  while (!m_token.stop_requested()) {
     AVFrame* frame = av_frame_alloc();
     ret = avcodec_receive_frame(m_codec_ctx, frame);
 
@@ -105,21 +110,25 @@ void AudioDecoder::decode_packet(SampleQueue* queue, AVPacket* packet) {
 
     int num_samples = 0;
     resample_audio(frame, &num_samples);
-    queue->push(m_pcm_buffer[0], num_samples);
+    m_queue->push(m_pcm_buffer[0], num_samples);
     av_frame_free(&frame);
   }
 }
 
-void AudioDecoder::process_file(SampleQueue* queue) {
+int AudioDecoder::sample_rate() {
+  return m_codec_ctx->sample_rate;
+}
+
+void AudioDecoder::process_file() {
   int ret = 0;
   AVPacket* packet = av_packet_alloc();
 
-  while (ret >= 0) {
+  while (ret >= 0 && !m_token.stop_requested()) {
     if ((ret = av_read_frame(m_format_ctx, packet)) < 0)
       break;
 
     if (packet->stream_index == m_audio_stream)
-      decode_packet(queue, packet);
+      decode_packet(packet);
 
     av_packet_unref(packet);
   }

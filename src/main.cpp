@@ -9,13 +9,12 @@
 int main() {
   try {
     std::stop_source stopper;
+    std::stop_token token = stopper.get_token();
 
-    SampleQueue queue(stopper.get_token(), 1024 * 3, 1024, 2);
-    SampleQueue* queue_ptr = &queue;
+    SampleQueue queue(1024 * 3, 1024, 2, token);
+    AudioDecoder reader("../assets/music.mp3", &queue, token);
 
-    // TODO: give this the stop token as well
-    AudioDecoder reader("../assets/music.mp3");
-    std::thread t1([&] { reader.process_file(queue_ptr); });
+    std::thread t1([&] { reader.process_file(); });
 
     int width = 900, height = 700;
     SetTraceLogLevel(LOG_WARNING);

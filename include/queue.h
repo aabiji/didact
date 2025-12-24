@@ -19,10 +19,10 @@ struct SampleChunk {
 
 class SampleQueue {
  public:
-  SampleQueue(std::stop_token token,
-              int max_samples,
+  SampleQueue(int max_samples,
               int chunk_samples,
-              int sample_bytes);
+              int sample_bytes,
+              std::stop_token token);
 
   bool is_full();
 

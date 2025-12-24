@@ -1,10 +1,10 @@
 #include "queue.h"
 #include <cmath>
 
-SampleQueue::SampleQueue(std::stop_token token,
-                         int max_samples,
+SampleQueue::SampleQueue(int max_samples,
                          int chunk_samples,
-                         int sample_bytes) {
+                         int sample_bytes,
+                         std::stop_token token) {
   m_sample_bytes = sample_bytes;
   m_chunk_samples = chunk_samples;
   m_max_chunks = std::ceil(max_samples / chunk_samples);

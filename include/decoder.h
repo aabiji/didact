@@ -12,17 +12,23 @@ extern "C" {
 
 class AudioDecoder {
  public:
-  AudioDecoder(const char* file_path);
+  AudioDecoder(const char* file_path,
+               SampleQueue* queue,
+               std::stop_token stop_token);
   ~AudioDecoder();
 
-  void process_file(SampleQueue* queue);
+  void process_file();
+  int sample_rate();
 
  private:
   void init_codec_ctx(const char* audio_path);
   void init_resampler();
 
-  void decode_packet(SampleQueue* queue, AVPacket* packet);
+  void decode_packet(AVPacket* packet);
   void resample_audio(AVFrame* frame, int* dst_num_samples);
+
+  std::stop_token m_token;
+  SampleQueue* m_queue;
 
   struct OutputConfig {
     AVSampleFormat sample_format;
