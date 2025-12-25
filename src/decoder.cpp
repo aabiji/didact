@@ -7,7 +7,7 @@ AudioDecoder::~AudioDecoder() {
   avformat_close_input(&m_format_ctx);
 }
 
-AudioDecoder::AudioDecoder(const char* file_path, std::stop_token stop_token) {
+AudioDecoder::AudioDecoder(const char *file_path, std::stop_token stop_token) {
   m_token = stop_token;
   m_queue.init(1024 * 3, 1024);
 
@@ -27,7 +27,7 @@ AudioDecoder::AudioDecoder(const char* file_path, std::stop_token stop_token) {
   init_resampler();
 }
 
-void AudioDecoder::init_codec_ctx(const char* file_path) {
+void AudioDecoder::init_codec_ctx(const char *file_path) {
   int ret = avformat_open_input(&m_format_ctx, file_path, nullptr, nullptr);
   if (ret < 0)
     throw Error(av_err2str(ret));
@@ -36,7 +36,7 @@ void AudioDecoder::init_codec_ctx(const char* file_path) {
   if (ret < 0)
     throw Error(av_err2str(ret));
 
-  const AVCodec* codec = nullptr;
+  const AVCodec *codec = nullptr;
   m_audio_stream =
       av_find_best_stream(m_format_ctx, AVMEDIA_TYPE_AUDIO, -1, -1, &codec, 0);
   if (m_audio_stream < 0)
@@ -45,7 +45,7 @@ void AudioDecoder::init_codec_ctx(const char* file_path) {
   m_codec_ctx = avcodec_alloc_context3(codec);
   m_codec_ctx->request_sample_fmt = m_output.sample_format;
 
-  AVStream* audio = m_format_ctx->streams[m_audio_stream];
+  AVStream *audio = m_format_ctx->streams[m_audio_stream];
   avcodec_parameters_to_context(m_codec_ctx, audio->codecpar);
 
   ret = avcodec_open2(m_codec_ctx, codec, nullptr);
@@ -66,7 +66,7 @@ void AudioDecoder::init_resampler() {
     throw Error(av_err2str(ret));
 }
 
-void AudioDecoder::resample_audio(AVFrame* frame, int* dst_num_samples) {
+void AudioDecoder::resample_audio(AVFrame *frame, int *dst_num_samples) {
   *dst_num_samples = swr_get_out_samples(m_resampler, frame->nb_samples);
 
   // Resize the pcm buffer when needed
@@ -92,15 +92,14 @@ void AudioDecoder::resample_audio(AVFrame* frame, int* dst_num_samples) {
     throw Error(av_err2str(ret));
 }
 
-void AudioDecoder::decode_packet(SampleChunkHandler handler,
-                                 void* user_data,
-                                 AVPacket* packet) {
+void AudioDecoder::decode_packet(SampleChunkHandler handler, void *user_data,
+                                 AVPacket *packet) {
   int ret = avcodec_send_packet(m_codec_ctx, packet);
   if (ret < 0)
     throw Error(av_err2str(ret));
 
   while (!m_token.stop_requested()) {
-    AVFrame* frame = av_frame_alloc();
+    AVFrame *frame = av_frame_alloc();
     ret = avcodec_receive_frame(m_codec_ctx, frame);
 
     if (ret == AVERROR(EAGAIN) || ret == AVERROR_EOF)
@@ -111,7 +110,7 @@ void AudioDecoder::decode_packet(SampleChunkHandler handler,
     int num_samples = 0;
     resample_audio(frame, &num_samples);
 
-    m_queue.push_samples((int16_t*)(m_pcm_buffer[0]), num_samples);
+    m_queue.push_samples((int16_t *)(m_pcm_buffer[0]), num_samples);
 
     if (m_queue.has_chunk()) {
       bool allow = m_queue.partial_chunk_remaining();
@@ -124,9 +123,9 @@ void AudioDecoder::decode_packet(SampleChunkHandler handler,
   }
 }
 
-void AudioDecoder::process_file(SampleChunkHandler handler, void* user_data) {
+void AudioDecoder::process_file(SampleChunkHandler handler, void *user_data) {
   int ret = 0;
-  AVPacket* packet = av_packet_alloc();
+  AVPacket *packet = av_packet_alloc();
 
   while (ret >= 0 && !m_token.stop_requested()) {
     if (m_queue.is_full())
