@@ -21,7 +21,6 @@ class AudioDecoder {
   ~AudioDecoder();
 
   void process_file(SampleChunkHandler handler, void* user_data);
-  int sample_rate();
 
  private:
   void init_codec_ctx(const char* audio_path);

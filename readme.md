@@ -1,16 +1,4 @@
-
-https://stackoverflow.com/questions/6740545/understanding-fft-output
-https://swharden.com/csdv/audio/fft/
-https://dsp.stackexchange.com/questions/40766/calculating-values-of-frequency-bins-in-python
 https://dlbeer.co.nz/articles/fftvis.html
-https://www.nti-audio.com/en/support/know-how/fast-fourier-transform-fft
-https://www.youtube.com/watch?v=h7apO7q16V0
-https://download.ni.com/evaluation/pxi/Understanding%20FFTs%20and%20Windowing.pdf
-https://etiand.re/posts/2025/01/how-to-decode-audio-streams-in-c-cpp-using-libav/
-https://github.com/mackron/miniaudio
-https://github.com/ggml-org/whisper.cpp
-https://www.raylib.com/examples/audio/loader.html?name=audio_raw_stream
-https://somcosoftware.com/en/blog/qt-qml-tutorials-new-series-by-scythe-studio
 
 - whispercpp integration
 - could extend as a cross platform voice notes app with real time ai transcriptions

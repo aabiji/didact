@@ -124,10 +124,6 @@ void AudioDecoder::decode_packet(SampleChunkHandler handler,
   }
 }
 
-int AudioDecoder::sample_rate() {
-  return m_codec_ctx->sample_rate;
-}
-
 void AudioDecoder::process_file(SampleChunkHandler handler, void* user_data) {
   int ret = 0;
   AVPacket* packet = av_packet_alloc();

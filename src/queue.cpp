@@ -24,6 +24,7 @@ bool SampleQueue::has_chunk() {
 bool SampleQueue::partial_chunk_remaining() {
   return m_chunks.size() == 1 && m_chunks.front().num_samples < m_chunk_samples;
 }
+
 SampleChunk SampleQueue::pop_chunk(bool allow_partial_chunk) {
   SampleChunk front = m_chunks.front();
   m_chunks.pop_front();
@@ -34,13 +35,12 @@ void SampleQueue::push_samples(int16_t* samples, int num_samples) {
   // Fill a potential partially filled chunk
   int samples_read = 0;
   if (!m_chunks.empty()) {
-    SampleChunk front = m_chunks.front();
-    if (front.num_samples < m_chunk_samples) {
-      int remaining =
-          std::min(m_chunk_samples - front.num_samples, num_samples);
-      std::copy(samples, samples + remaining,
-                front.samples + front.num_samples);
+    SampleChunk& last = m_chunks.back();
+    if (last.num_samples < m_chunk_samples) {
+      int remaining = std::min(m_chunk_samples - last.num_samples, num_samples);
+      std::copy(samples, samples + remaining, last.samples + last.num_samples);
       samples_read = remaining;
+      last.num_samples = m_chunk_samples;
     }
   }
 

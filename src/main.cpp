@@ -1,4 +1,5 @@
 #include <raylib.h>
+#include <algorithm>
 #include <iostream>
 #include <thread>
 
@@ -8,9 +9,13 @@
 #include "fft.h"
 
 std::vector<double> frequency_bins;
+double max_amplitude = 0;
 
 void process_audio_frame(void* data, SampleChunk chunk) {
   frequency_bins = analyze_spectrum(chunk.samples, chunk.num_samples);
+
+  max_amplitude =
+      *(std::max_element(frequency_bins.begin(), frequency_bins.end()));
 }
 
 int main() {
@@ -26,18 +31,22 @@ int main() {
     InitWindow(window_width, window_height, "didact");
     SetTargetFPS(60);
 
+    Vector2 bar_size = {25, 250};
+    int max_bins = double(window_width) / bar_size.x;
+
     while (!WindowShouldClose()) {
+      ClearBackground(BLACK);
       BeginDrawing();
 
-      double ratio =
-          double(decoder.sample_rate()) / double(frequency_bins.size());
+      int min_y = double(window_height) / 2.0 + (bar_size.y / 2.0);
       for (int i = 0; i < frequency_bins.size(); i++) {
-        double amplitude = frequency_bins[i];
-        int width = 10;
-        int height = amplitude * 250;
-        int x = i * ratio * width;
-        int y = window_height;
-        DrawRectangle(x, y, 10, height, GREEN);
+        int height = (frequency_bins[i] / max_amplitude) * bar_size.y;
+        double scale =
+            std::pow(double(i) / double(frequency_bins.size()), 1.0 / 2.0);
+        int bin_index = scale * max_bins;
+        Color color = ColorFromHSV(scale * 360, 1.0, 1.0);
+        DrawRectangle(bin_index * bar_size.x, min_y - height, bar_size.x,
+                      height, color);
       }
 
       EndDrawing();
