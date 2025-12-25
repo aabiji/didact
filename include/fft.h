@@ -13,7 +13,7 @@ std::vector<double> analyze_spectrum(int16_t* samples, int num_samples);
 
 using complex = std::complex<double>;
 using cdata = std::vector<complex>;
-const double PI = std::numbers::pi;
+const double pi = std::numbers::pi;
 
 // The Fast Fourrier Transform algorithm.
 // The implementation was derived from here:
@@ -41,7 +41,7 @@ cdata FFT(cdata data, bool inverse) {
   for (int len = 2; len <= N; len *= 2) {
     // Calculate the "twiddle factor" step for this stage.
     // Forward FFT uses e^(-i*2pi/len), inverse uses e^(i*2pi/len).
-    double angle = (inverse ? -1 : 1) * (2.0 * PI / len);
+    double angle = (inverse ? -1 : 1) * (2.0 * pi / len);
     complex factor = std::polar(1.0, angle);
     int mid = len / 2;
 
@@ -77,7 +77,7 @@ std::vector<double> analyze_spectrum(int16_t* samples, int num_samples) {
 
   // Apply a Hamming Window, which will reduce the noise in the FFT output
   // (spectral leakage) caused by sharp discontinuities in the input
-  double window_const = 2.0 * PI / (num_samples - 1);
+  double window_const = 2.0 * pi / (num_samples - 1);
   for (int i = 0; i < num_samples; i++) {
     double hamming = 0.54 - 0.46 * std::cos(window_const * i);
     input[i] = complex(double(samples[i]) * hamming);
@@ -88,13 +88,13 @@ std::vector<double> analyze_spectrum(int16_t* samples, int num_samples) {
   // Since the input is purely real, we can ignore the
   // upper half of the output, which is just a mirror image
   int mid = size / 2;
-  std::vector<double> amplitudes(mid);
+  std::vector<double> frequency_bins(mid);
 
   for (int i = 0; i < mid; i++) {
     double scale = i == 0 ? 1.0 / double(size) : 2.0 / double(size);
-    double magnitude = std::abs(output[i]);
-    amplitudes[i] = magnitude * scale;
+    double amplitude = std::abs(output[i]) * scale;
+    frequency_bins[i] = amplitude;
   }
-  return amplitudes;
+  return frequency_bins;
 }
 #endif

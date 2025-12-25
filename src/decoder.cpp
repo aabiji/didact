@@ -7,11 +7,9 @@ AudioDecoder::~AudioDecoder() {
   avformat_close_input(&m_format_ctx);
 }
 
-AudioDecoder::AudioDecoder(const char* file_path,
-                           SampleQueue* queue,
-                           std::stop_token stop_token) {
+AudioDecoder::AudioDecoder(const char* file_path, std::stop_token stop_token) {
   m_token = stop_token;
-  m_queue = queue;
+  m_queue.init(1024 * 3, 1024);
 
   m_output = {.sample_format = AV_SAMPLE_FMT_S16,
               .channel_layout = AV_CHANNEL_LAYOUT_MONO,
@@ -94,7 +92,9 @@ void AudioDecoder::resample_audio(AVFrame* frame, int* dst_num_samples) {
     throw Error(av_err2str(ret));
 }
 
-void AudioDecoder::decode_packet(AVPacket* packet) {
+void AudioDecoder::decode_packet(SampleChunkHandler handler,
+                                 void* user_data,
+                                 AVPacket* packet) {
   int ret = avcodec_send_packet(m_codec_ctx, packet);
   if (ret < 0)
     throw Error(av_err2str(ret));
@@ -110,7 +110,16 @@ void AudioDecoder::decode_packet(AVPacket* packet) {
 
     int num_samples = 0;
     resample_audio(frame, &num_samples);
-    m_queue->push(m_pcm_buffer[0], num_samples);
+
+    m_queue.push_samples((int16_t*)(m_pcm_buffer[0]), num_samples);
+
+    if (m_queue.has_chunk()) {
+      bool allow = m_queue.partial_chunk_remaining();
+      SampleChunk chunk = m_queue.pop_chunk(allow);
+      handler(user_data, chunk);
+      free(chunk.samples);
+    }
+
     av_frame_free(&frame);
   }
 }
@@ -119,16 +128,19 @@ int AudioDecoder::sample_rate() {
   return m_codec_ctx->sample_rate;
 }
 
-void AudioDecoder::process_file() {
+void AudioDecoder::process_file(SampleChunkHandler handler, void* user_data) {
   int ret = 0;
   AVPacket* packet = av_packet_alloc();
 
   while (ret >= 0 && !m_token.stop_requested()) {
+    if (m_queue.is_full())
+      continue;
+
     if ((ret = av_read_frame(m_format_ctx, packet)) < 0)
       break;
 
     if (packet->stream_index == m_audio_stream)
-      decode_packet(packet);
+      decode_packet(handler, user_data, packet);
 
     av_packet_unref(packet);
   }

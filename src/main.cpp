@@ -1,29 +1,45 @@
 #include <raylib.h>
-
-#include <atomic>
 #include <iostream>
 #include <thread>
 
 #include "decoder.h"
+
+#define FFT_IMPLEMENTATION
+#include "fft.h"
+
+std::vector<double> frequency_bins;
+
+void process_audio_frame(void* data, SampleChunk chunk) {
+  frequency_bins = analyze_spectrum(chunk.samples, chunk.num_samples);
+}
 
 int main() {
   try {
     std::stop_source stopper;
     std::stop_token token = stopper.get_token();
 
-    SampleQueue queue(1024 * 3, 1024, 2, token);
-    AudioDecoder reader("../assets/music.mp3", &queue, token);
+    AudioDecoder decoder("../assets/music.mp3", token);
+    std::thread t1([&] { decoder.process_file(process_audio_frame, nullptr); });
 
-    std::thread t1([&] { reader.process_file(); });
-
-    int width = 900, height = 700;
+    int window_width = 900, window_height = 700;
     SetTraceLogLevel(LOG_WARNING);
-    InitWindow(width, height, "didact");
+    InitWindow(window_width, window_height, "didact");
     SetTargetFPS(60);
 
     while (!WindowShouldClose()) {
       BeginDrawing();
-      DrawRectangle(100, 200, 50, 50, GREEN);
+
+      double ratio =
+          double(decoder.sample_rate()) / double(frequency_bins.size());
+      for (int i = 0; i < frequency_bins.size(); i++) {
+        double amplitude = frequency_bins[i];
+        int width = 10;
+        int height = amplitude * 250;
+        int x = i * ratio * width;
+        int y = window_height;
+        DrawRectangle(x, y, 10, height, GREEN);
+      }
+
       EndDrawing();
     }
 

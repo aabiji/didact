@@ -1,5 +1,8 @@
 #pragma once
 
+#include <functional>
+#include <stop_token>
+
 extern "C" {
 #include <libavcodec/avcodec.h>
 #include <libavcodec/packet.h>
@@ -10,25 +13,27 @@ extern "C" {
 
 #include "queue.h"
 
+using SampleChunkHandler = std::function<void(void*, SampleChunk)>;
+
 class AudioDecoder {
  public:
-  AudioDecoder(const char* file_path,
-               SampleQueue* queue,
-               std::stop_token stop_token);
+  AudioDecoder(const char* file_path, std::stop_token stop_token);
   ~AudioDecoder();
 
-  void process_file();
+  void process_file(SampleChunkHandler handler, void* user_data);
   int sample_rate();
 
  private:
   void init_codec_ctx(const char* audio_path);
   void init_resampler();
 
-  void decode_packet(AVPacket* packet);
+  void decode_packet(SampleChunkHandler handler,
+                     void* user_data,
+                     AVPacket* packet);
   void resample_audio(AVFrame* frame, int* dst_num_samples);
 
   std::stop_token m_token;
-  SampleQueue* m_queue;
+  SampleQueue m_queue;
 
   struct OutputConfig {
     AVSampleFormat sample_format;
