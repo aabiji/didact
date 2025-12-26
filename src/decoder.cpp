@@ -12,7 +12,8 @@ AudioDecoder::~AudioDecoder() {
   avformat_close_input(&m_format_ctx);
 }
 
-AudioDecoder::AudioDecoder(const char *file_path, std::stop_token stop_token) {
+AudioDecoder::AudioDecoder(const char *file_path, int max_queue_size,
+                           std::stop_token stop_token) {
   m_token = stop_token;
 
   m_output = {.sample_format = AV_SAMPLE_FMT_S16,
@@ -22,6 +23,7 @@ AudioDecoder::AudioDecoder(const char *file_path, std::stop_token stop_token) {
   m_audio_stream = -1;
   m_max_num_samples = 0;
   m_pcm_buffer = nullptr;
+  m_queue.init(max_queue_size);
 
   m_resampler = nullptr;
   m_codec_ctx = nullptr;
@@ -112,19 +114,31 @@ void AudioDecoder::decode_packet(SampleHandler handler, AVPacket *packet) {
 
     int num_samples = 0;
     resample_audio(frame, &num_samples);
-    handler.callback(handler.user_data, (int16_t *)(m_pcm_buffer[0]),
-                     num_samples);
+
+    int16_t *ptr = (int16_t *)(m_pcm_buffer[0]);
+    handler.callback(handler.user_data, ptr, num_samples);
+    m_queue.push_samples(ptr, num_samples);
+
     av_frame_free(&frame);
   }
 }
 
 int AudioDecoder::sample_rate() { return m_codec_ctx->sample_rate; }
 
+bool AudioDecoder::empty() { return m_queue.empty(); }
+
+std::vector<int16_t> AudioDecoder::get_samples(int amount) {
+  return m_queue.pop_samples(amount);
+}
+
 void AudioDecoder::process_file(SampleHandler handler) {
   int ret = 0;
   AVPacket *packet = av_packet_alloc();
 
   while (ret >= 0 && !m_token.stop_requested()) {
+    if (m_queue.is_full())
+      continue;
+
     if ((ret = av_read_frame(m_format_ctx, packet)) < 0)
       break;
 

@@ -1,37 +1,46 @@
 #pragma once
 
+#include <deque>
+#include <mutex>
+#include <shared_mutex>
 #include <stdlib.h>
-#include <list>
+#include <vector>
 
-struct SampleChunk {
-  int16_t* samples;
-  int num_samples;
-};
+using Lock = std::shared_mutex;
+using WriteLock = std::unique_lock<Lock>;
+using ReadLock = std::shared_lock<Lock>;
 
 class SampleQueue {
- public:
-  ~SampleQueue();
-  void init(int max_chunks, int chunk_samples);
+public:
+  void init(int size) { m_max_samples = size; }
 
-  bool is_full();
-  bool has_chunk();
+  bool is_full() {
+    ReadLock read_lock(m_lock);
+    return m_data.size() == m_max_samples;
+  }
 
-  // Returns whether the remaining samples in the queue
-  // don't make up a full chunk
-  bool partial_chunk_remaining();
+  bool empty() {
+    ReadLock read_lock(m_lock);
+    return m_data.empty();
+  }
 
-  // Push a variable number of samples to the queue.
-  // This will block until there's enough space in the queue.
-  void push_samples(int16_t* samples, int num_samples);
+  void push_samples(int16_t *samples, int num_samples) {
+    WriteLock write_lock(m_lock);
+    if (m_data.size() == m_max_samples)
+      return;
+    m_data.insert(m_data.end(), samples, samples + num_samples);
+  }
 
-  // Read back samples from the queue in a fixed sized chunk.
-  // This will block until there is a valid chunk in the queue.
-  // NOTE: The caller will be responsible for freeing the data
-  // refered to by the chunk.
-  SampleChunk pop_chunk(bool allow_partial_chunk);
+  std::vector<int16_t> pop_samples(int num_samples) {
+    ReadLock read_lock(m_lock);
+    std::vector<int16_t> output(num_samples, 0);
+    std::copy(m_data.begin(), m_data.begin() + num_samples, output.begin());
+    m_data.erase(m_data.begin(), m_data.begin() + num_samples);
+    return output;
+  }
 
- private:
-  int m_max_chunks;
-  int m_chunk_samples;
-  std::list<SampleChunk> m_chunks;
+private:
+  int m_max_samples;
+  std::deque<int16_t> m_data;
+  Lock m_lock;
 };

@@ -11,6 +11,8 @@ extern "C" {
 #include <libswresample/swresample.h>
 }
 
+#include "queue.h"
+
 struct SampleHandler {
   std::function<void(void *, int16_t *, int)> callback;
   void *user_data;
@@ -18,11 +20,15 @@ struct SampleHandler {
 
 class AudioDecoder {
 public:
-  AudioDecoder(const char *file_path, std::stop_token stop_token);
+  AudioDecoder(const char *file_path, int max_queue_size,
+               std::stop_token stop_token);
   ~AudioDecoder();
 
-  int sample_rate();
   void process_file(SampleHandler handler);
+
+  bool empty();
+  int sample_rate();
+  std::vector<int16_t> get_samples(int amount);
 
 private:
   void init_codec_ctx(const char *audio_path);
@@ -42,6 +48,7 @@ private:
   int m_audio_stream;
   int m_max_num_samples;
   uint8_t **m_pcm_buffer;
+  SampleQueue m_queue;
 
   SwrContext *m_resampler;
   AVCodecContext *m_codec_ctx;

@@ -1,7 +1,9 @@
 #include <algorithm>
 #include <iostream>
-#include <raylib.h>
 #include <thread>
+
+#include <miniaudio.h>
+#include <raylib.h>
 
 #include "decoder.h"
 #include "fft.h"
@@ -11,17 +13,45 @@ void process_audio_frame(void *user_data, int16_t *samples, int num_samples) {
   analyzer->process(samples, num_samples);
 }
 
+void data_callback(ma_device *device, void *output, const void *input,
+                   ma_uint32 num_samples) {
+  AudioDecoder *decoder = (AudioDecoder *)device->pUserData;
+  if (decoder == nullptr || decoder->empty())
+    return;
+
+  auto samples = decoder->get_samples(num_samples);
+  std::copy(samples.begin(), samples.begin() + num_samples, (int16_t *)output);
+}
+
 int main() {
   try {
     std::stop_source stopper;
     std::stop_token token = stopper.get_token();
 
-    AudioDecoder decoder("../assets/music.mp3", token);
+    AudioDecoder decoder("../assets/music.mp3", 4096, token);
     SpectrumAnalyzer analyzer(decoder.sample_rate());
 
     SampleHandler handler = {.callback = process_audio_frame,
                              .user_data = (void *)&analyzer};
     std::thread t1([&] { decoder.process_file(handler); });
+
+    ma_device device;
+    ma_device_config config = ma_device_config_init(ma_device_type_playback);
+    config.playback.format = ma_format_s16;
+    config.playback.channels = 1;
+    config.sampleRate = decoder.sample_rate();
+    config.dataCallback = data_callback;
+    config.pUserData = &decoder;
+
+    if (ma_device_init(nullptr, &config, &device) != MA_SUCCESS) {
+      std::cout << "Failed to open the playback device\n";
+      return -1;
+    }
+
+    if (ma_device_start(&device) != MA_SUCCESS) {
+      ma_device_uninit(&device);
+      return -1;
+    }
 
     int window_width = 900, window_height = 700;
     SetTraceLogLevel(LOG_WARNING);
@@ -41,9 +71,10 @@ int main() {
       float start_x = float(window_width) / 2.0f;
 
       for (int i = -(num_bars - 1); i < num_bars; i++) {
-        float x = start_x + i * bar_size.x;
-        float value_percent = (bars[abs(i)] - min) / (max - min);
+        float value = bars[abs(i)];
+        float value_percent = (value - min) / (max - min);
         float height = value_percent * bar_size.y;
+        float x = start_x + i * bar_size.x;
         float center_y = float(window_height) / 2.0f - height / 2.0f;
         DrawRectangle(x, center_y, bar_size.x, height, WHITE);
       }
@@ -51,11 +82,15 @@ int main() {
       EndDrawing();
     }
 
-    CloseWindow();
+    ma_device_uninit(&device);
 
+    CloseWindow();
     stopper.request_stop();
     t1.join();
   } catch (const std::runtime_error &error) {
     std::cout << error.what() << "\n";
+    return -1;
   }
+
+  return 0;
 }
