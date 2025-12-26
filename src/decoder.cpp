@@ -2,6 +2,11 @@
 #include "error.h"
 
 AudioDecoder::~AudioDecoder() {
+  if (m_pcm_buffer) {
+    av_freep(&m_pcm_buffer[0]);
+  }
+  av_freep(&m_pcm_buffer);
+
   swr_free(&m_resampler);
   avcodec_free_context(&m_codec_ctx);
   avformat_close_input(&m_format_ctx);
@@ -9,7 +14,6 @@ AudioDecoder::~AudioDecoder() {
 
 AudioDecoder::AudioDecoder(const char *file_path, std::stop_token stop_token) {
   m_token = stop_token;
-  m_queue.init(1024 * 3, 1024);
 
   m_output = {.sample_format = AV_SAMPLE_FMT_S16,
               .channel_layout = AV_CHANNEL_LAYOUT_MONO,
@@ -92,8 +96,7 @@ void AudioDecoder::resample_audio(AVFrame *frame, int *dst_num_samples) {
     throw Error(av_err2str(ret));
 }
 
-void AudioDecoder::decode_packet(SampleChunkHandler handler, void *user_data,
-                                 AVPacket *packet) {
+void AudioDecoder::decode_packet(SampleHandler handler, AVPacket *packet) {
   int ret = avcodec_send_packet(m_codec_ctx, packet);
   if (ret < 0)
     throw Error(av_err2str(ret));
@@ -109,33 +112,24 @@ void AudioDecoder::decode_packet(SampleChunkHandler handler, void *user_data,
 
     int num_samples = 0;
     resample_audio(frame, &num_samples);
-
-    m_queue.push_samples((int16_t *)(m_pcm_buffer[0]), num_samples);
-
-    if (m_queue.has_chunk()) {
-      bool allow = m_queue.partial_chunk_remaining();
-      SampleChunk chunk = m_queue.pop_chunk(allow);
-      handler(user_data, chunk);
-      free(chunk.samples);
-    }
-
+    handler.callback(handler.user_data, (int16_t *)(m_pcm_buffer[0]),
+                     num_samples);
     av_frame_free(&frame);
   }
 }
 
-void AudioDecoder::process_file(SampleChunkHandler handler, void *user_data) {
+int AudioDecoder::sample_rate() { return m_codec_ctx->sample_rate; }
+
+void AudioDecoder::process_file(SampleHandler handler) {
   int ret = 0;
   AVPacket *packet = av_packet_alloc();
 
   while (ret >= 0 && !m_token.stop_requested()) {
-    if (m_queue.is_full())
-      continue;
-
     if ((ret = av_read_frame(m_format_ctx, packet)) < 0)
       break;
 
     if (packet->stream_index == m_audio_stream)
-      decode_packet(handler, user_data, packet);
+      decode_packet(handler, packet);
 
     av_packet_unref(packet);
   }

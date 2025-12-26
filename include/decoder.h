@@ -11,28 +11,27 @@ extern "C" {
 #include <libswresample/swresample.h>
 }
 
-#include "queue.h"
-
-using SampleChunkHandler = std::function<void(void*, SampleChunk)>;
+struct SampleHandler {
+  std::function<void(void *, int16_t *, int)> callback;
+  void *user_data;
+};
 
 class AudioDecoder {
- public:
-  AudioDecoder(const char* file_path, std::stop_token stop_token);
+public:
+  AudioDecoder(const char *file_path, std::stop_token stop_token);
   ~AudioDecoder();
 
-  void process_file(SampleChunkHandler handler, void* user_data);
+  int sample_rate();
+  void process_file(SampleHandler handler);
 
- private:
-  void init_codec_ctx(const char* audio_path);
+private:
+  void init_codec_ctx(const char *audio_path);
   void init_resampler();
 
-  void decode_packet(SampleChunkHandler handler,
-                     void* user_data,
-                     AVPacket* packet);
-  void resample_audio(AVFrame* frame, int* dst_num_samples);
+  void decode_packet(SampleHandler handle, AVPacket *packet);
+  void resample_audio(AVFrame *frame, int *dst_num_samples);
 
   std::stop_token m_token;
-  SampleQueue m_queue;
 
   struct OutputConfig {
     AVSampleFormat sample_format;
@@ -42,9 +41,9 @@ class AudioDecoder {
 
   int m_audio_stream;
   int m_max_num_samples;
-  uint8_t** m_pcm_buffer;
+  uint8_t **m_pcm_buffer;
 
-  SwrContext* m_resampler;
-  AVCodecContext* m_codec_ctx;
-  AVFormatContext* m_format_ctx;
+  SwrContext *m_resampler;
+  AVCodecContext *m_codec_ctx;
+  AVFormatContext *m_format_ctx;
 };
