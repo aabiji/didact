@@ -28,7 +28,8 @@ int main() {
     std::stop_source stopper;
     std::stop_token token = stopper.get_token();
 
-    AudioDecoder decoder("../assets/music.mp3", 4096, token);
+    const char *path = "../assets/fly-me-to=the-moon.mp3";
+    AudioDecoder decoder(path, 4096, token);
     SpectrumAnalyzer analyzer(decoder.sample_rate());
 
     SampleHandler handler = {.callback = process_audio_frame,
