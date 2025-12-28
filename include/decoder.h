@@ -14,7 +14,7 @@ extern "C" {
 #include "queue.h"
 
 struct SampleHandler {
-  std::function<void(void *, int16_t *, int)> callback;
+  std::function<void(void *, int16_t *, int, int)> callback;
   void *user_data;
 };
 
@@ -46,7 +46,8 @@ private:
   } m_output;
 
   int m_audio_stream;
-  int m_max_num_samples;
+  int m_num_total_samples;
+  int m_max_frame_samples;
   uint8_t **m_pcm_buffer;
   SampleQueue m_queue;
 

@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <chrono>
 #include <iostream>
 #include <thread>
 
@@ -8,11 +9,18 @@
 #include "decoder.h"
 #include "fft.h"
 
-void process_audio_frame(void *user_data, int16_t *samples, int num_samples) {
+void process_audio_frame(void *user_data, int16_t *samples, int num_samples,
+                         int total_samples) {
   SpectrumAnalyzer *analyzer = (SpectrumAnalyzer *)user_data;
-  analyzer->process(samples, num_samples);
+  analyzer->process(samples, num_samples, total_samples);
 }
 
+int playback_sample_index = 0;
+
+// TODO: get microphone input
+// TODO: pull in whispercpp as a dependency (if real time tts is actually fast
+// enough, then we could think about pulling in qt for a real time voice app, if
+// not, start thinking about the next project
 void data_callback(ma_device *device, void *output, const void *input,
                    ma_uint32 num_samples) {
   AudioDecoder *decoder = (AudioDecoder *)device->pUserData;
@@ -21,6 +29,26 @@ void data_callback(ma_device *device, void *output, const void *input,
 
   auto samples = decoder->get_samples(num_samples);
   std::copy(samples.begin(), samples.begin() + num_samples, (int16_t *)output);
+  playback_sample_index += num_samples;
+  std::cout << num_samples << "\n";
+}
+
+void draw_bars(std::vector<float> bars, Vector2 window_size) {
+  int num_bars = bars.size();
+  float min = *(std::min_element(bars.begin(), bars.end()));
+  float max = *(std::max_element(bars.begin(), bars.end()));
+
+  Vector2 bar_size = {5, 200};
+  float start_x = window_size.x / 2.0f;
+
+  for (int i = -(num_bars - 1); i < num_bars; i++) {
+    float value = bars[abs(i)];
+    float value_percent = (value - min) / (max - min);
+    float height = value_percent * bar_size.y;
+    float x = start_x + 2 * (i * bar_size.x);
+    float center_y = window_size.y / 2.0f - height / 2.0f;
+    DrawRectangle(x, center_y, bar_size.x, height, WHITE);
+  }
 }
 
 int main() {
@@ -28,7 +56,7 @@ int main() {
     std::stop_source stopper;
     std::stop_token token = stopper.get_token();
 
-    const char *path = "../assets/fly-me-to=the-moon.mp3";
+    const char *path = "../assets/fly-me-to-the-moon.mp3";
     AudioDecoder decoder(path, 4096, token);
     SpectrumAnalyzer analyzer(decoder.sample_rate());
 
@@ -54,31 +82,21 @@ int main() {
       return -1;
     }
 
-    int window_width = 900, window_height = 700;
+    int buffer_size = device.playback.internalPeriodSizeInFrames;
+    std::cout << "Buffer size: " << buffer_size << "\n";
+
+    Vector2 window_size = {900, 700};
     SetTraceLogLevel(LOG_WARNING);
-    InitWindow(window_width, window_height, "didact");
+    InitWindow(window_size.x, window_size.y, "didact");
     SetTargetFPS(60);
 
     while (!WindowShouldClose()) {
       ClearBackground(BLACK);
       BeginDrawing();
 
-      auto bars = analyzer.get_bars();
-      int num_bars = bars.size();
-      float min = *(std::min_element(bars.begin(), bars.end()));
-      float max = *(std::max_element(bars.begin(), bars.end()));
-
-      Vector2 bar_size = {10, 200};
-      float start_x = float(window_width) / 2.0f;
-
-      for (int i = -(num_bars - 1); i < num_bars; i++) {
-        float value = bars[abs(i)];
-        float value_percent = (value - min) / (max - min);
-        float height = value_percent * bar_size.y;
-        float x = start_x + i * bar_size.x;
-        float center_y = float(window_height) / 2.0f - height / 2.0f;
-        DrawRectangle(x, center_y, bar_size.x, height, WHITE);
-      }
+      auto bars = analyzer.get_bars(playback_sample_index);
+      if (bars.size() > 0)
+        draw_bars(bars, window_size);
 
       EndDrawing();
     }

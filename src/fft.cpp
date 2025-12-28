@@ -70,19 +70,60 @@ SpectrumAnalyzer::SpectrumAnalyzer(int sample_rate) {
 
   m_input_buffer.resize(m_input_size, 0);
   m_frequency_bins.resize(m_input_size / 2, 0);
-  m_bars.resize(m_num_bars, 0);
 }
 
-std::vector<float> SpectrumAnalyzer::get_bars() {
+#include <iostream>
+// FIXME: change sample index types to avoid possible overflow
+// TODO: use a ring buffer to store samples instead of shifting the window
+//       when reading the fft, just read what comes after the write pointer
+//       first (old data), then what comes before the write point after (new
+//       data)
+// TODO: either find a way to interpolate between offsets (chunks(,
+//       or find a way to get the index of the current sample being played
+std::vector<float> SpectrumAnalyzer::get_bars(int start_sample_offset) {
   ReadLock read_lock(m_lock);
-  return m_bars;
+
+  // samples read within the second
+  int extra = start_sample_offset % m_sample_rate;
+
+  int end_sample_offset = (start_sample_offset - extra) + m_sample_rate;
+
+  // std::cout << "Sample start: " << start_sample_offset
+  //           << " Sample end: " << end_sample_offset;
+
+  // int target_start = (milliseconds / 1000.0) * m_sample_rate;
+  // int target_end = target_start + m_sample_rate;
+
+  // TODO: refactor and improve this:
+  // basically stay on the same fft frame if we haven't advance a second
+  int target_start = start_sample_offset;
+  int target_end = end_sample_offset;
+  for (int i = 0; i < m_frames.size(); i++) {
+    FFTFrame frame = m_frames.front();
+    int samples = frame.num_samples_till_now;
+
+    // std::cout << "Samples: " << samples << " Start: " << target_start
+    //           << " End: " << end_sample_offset << "\n";
+
+    if (samples >= target_start) {
+      if (samples >= target_end)
+        m_frames.pop_front(); // seconds += 1
+
+      return frame.bars;
+    } else {
+      m_frames.pop_front(); // catch up to the next block
+    }
+  }
+
+  return {};
 }
 
-void SpectrumAnalyzer::process(int16_t *samples, int length) {
+void SpectrumAnalyzer::process(int16_t *samples, int length,
+                               int total_samples) {
   WriteLock write_lock(m_lock);
   fill_input_buffer(samples, length);
   get_frequency_bins();
-  map_bins_to_bars();
+  map_bins_to_bars(total_samples);
 }
 
 void SpectrumAnalyzer::fill_input_buffer(int16_t *data, int size) {
@@ -131,10 +172,12 @@ void SpectrumAnalyzer::get_frequency_bins() {
   }
 }
 
-void SpectrumAnalyzer::map_bins_to_bars() {
+void SpectrumAnalyzer::map_bins_to_bars(int total_samples) {
   float bin_frequency_spacing = float(m_sample_rate) / float(m_input_size);
   float min_freq = 40, max_freq = float(m_sample_rate) / 2.0;
   float ratio = max_freq / min_freq;
+
+  std::vector<float> bars(m_num_bars);
 
   // Logarithmically map peak magnitudes to the set of bars.
   // This is because human hearing is Logarithmic: going from 100 Hz
@@ -149,6 +192,8 @@ void SpectrumAnalyzer::map_bins_to_bars() {
     int bin_end = std::floor(freq_end / bin_frequency_spacing);
     auto peak_it = std::max_element(m_frequency_bins.begin() + bin_start,
                                     m_frequency_bins.begin() + bin_end);
-    m_bars[i] = *peak_it;
+    bars[i] = *peak_it;
   }
+
+  m_frames.push_back({bars, total_samples});
 }

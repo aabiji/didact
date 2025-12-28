@@ -23,7 +23,8 @@ AudioDecoder::AudioDecoder(const char *file_path, int max_queue_size,
               .frame_samples = 1024};
 
   m_audio_stream = -1;
-  m_max_num_samples = 0;
+  m_max_frame_samples = 0;
+  m_num_total_samples = 0;
   m_pcm_buffer = nullptr;
   m_queue.init(max_queue_size);
 
@@ -85,7 +86,7 @@ void AudioDecoder::resample_audio(AVFrame *frame, int *dst_num_samples) {
   *dst_num_samples = swr_get_out_samples(m_resampler, frame->nb_samples);
 
   // Resize the pcm buffer when needed
-  if (*dst_num_samples > m_max_num_samples) {
+  if (*dst_num_samples > m_max_frame_samples) {
     if (m_pcm_buffer) {
       av_freep(&m_pcm_buffer[0]);
     }
@@ -98,7 +99,7 @@ void AudioDecoder::resample_audio(AVFrame *frame, int *dst_num_samples) {
     if (ret < 0)
       throw Error(err2str(ret));
 
-    m_max_num_samples = *dst_num_samples;
+    m_max_frame_samples = *dst_num_samples;
   }
 
   int ret =
@@ -124,9 +125,10 @@ void AudioDecoder::decode_packet(SampleHandler handler, AVPacket *packet) {
 
     int num_samples = 0;
     resample_audio(frame, &num_samples);
-
     int16_t *ptr = (int16_t *)(m_pcm_buffer[0]);
-    handler.callback(handler.user_data, ptr, num_samples);
+    m_num_total_samples += frame->nb_samples;
+
+    handler.callback(handler.user_data, ptr, num_samples, m_num_total_samples);
     m_queue.push_samples(ptr, num_samples);
 
     av_frame_free(&frame);
