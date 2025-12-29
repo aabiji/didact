@@ -1,36 +1,33 @@
 #include <algorithm>
-#include <chrono>
 #include <iostream>
-#include <thread>
 
 #include <miniaudio.h>
 #include <raylib.h>
 
-#include "decoder.h"
+#include "error.h"
 #include "fft.h"
 
-void process_audio_frame(void *user_data, int16_t *samples, int num_samples,
-                         int total_samples) {
-  SpectrumAnalyzer *analyzer = (SpectrumAnalyzer *)user_data;
-  analyzer->process(samples, num_samples, total_samples);
-}
+struct CallbackData {
+  ma_decoder *decoder;
+  SpectrumAnalyzer *analyzer;
+  unsigned long long sample_offset;
+  bool done;
+};
 
-int playback_sample_index = 0;
-
-// TODO: get microphone input
-// TODO: pull in whispercpp as a dependency (if real time tts is actually fast
-// enough, then we could think about pulling in qt for a real time voice app, if
-// not, start thinking about the next project
 void data_callback(ma_device *device, void *output, const void *input,
                    ma_uint32 num_samples) {
-  AudioDecoder *decoder = (AudioDecoder *)device->pUserData;
-  if (decoder == nullptr || decoder->empty())
-    return;
+  CallbackData *data = (CallbackData *)device->pUserData;
 
-  auto samples = decoder->get_samples(num_samples);
-  std::copy(samples.begin(), samples.begin() + num_samples, (int16_t *)output);
-  playback_sample_index += num_samples;
-  std::cout << num_samples << "\n";
+  unsigned long long samples_read = 0;
+  ma_result result = ma_decoder_read_pcm_frames(data->decoder, output,
+                                                num_samples, &samples_read);
+  if (samples_read < num_samples) {
+    data->done = true;
+    return;
+  }
+
+  ma_decoder_get_cursor_in_pcm_frames(data->decoder, &data->sample_offset);
+  data->analyzer->process((int16_t *)output, samples_read, data->sample_offset);
 }
 
 void draw_bars(std::vector<float> bars, Vector2 window_size) {
@@ -53,37 +50,35 @@ void draw_bars(std::vector<float> bars, Vector2 window_size) {
 
 int main() {
   try {
-    std::stop_source stopper;
-    std::stop_token token = stopper.get_token();
-
     const char *path = "../assets/fly-me-to-the-moon.mp3";
-    AudioDecoder decoder(path, 4096, token);
-    SpectrumAnalyzer analyzer(decoder.sample_rate());
 
-    SampleHandler handler = {.callback = process_audio_frame,
-                             .user_data = (void *)&analyzer};
-    std::thread t1([&] { decoder.process_file(handler); });
+    ma_decoder decoder;
+    ma_decoder_config decoder_config =
+        ma_decoder_config_init(ma_format_s16, 1, 41000);
+    ma_result result = ma_decoder_init_file(path, &decoder_config, &decoder);
+    std::cout << result << "\n";
+    if (result != MA_SUCCESS)
+      throw Error("Failed to initialize the decoder");
+
+    SpectrumAnalyzer analyzer(decoder.outputSampleRate);
+    CallbackData data = {&decoder, &analyzer, 0, false};
 
     ma_device device;
-    ma_device_config config = ma_device_config_init(ma_device_type_playback);
-    config.playback.format = ma_format_s16;
-    config.playback.channels = 1;
-    config.sampleRate = decoder.sample_rate();
-    config.dataCallback = data_callback;
-    config.pUserData = &decoder;
+    ma_device_config device_config =
+        ma_device_config_init(ma_device_type_playback);
+    device_config.playback.format = decoder.outputFormat;
+    device_config.playback.channels = decoder.outputChannels;
+    device_config.sampleRate = decoder.outputSampleRate;
+    device_config.dataCallback = data_callback;
+    device_config.pUserData = &data;
 
-    if (ma_device_init(nullptr, &config, &device) != MA_SUCCESS) {
-      std::cout << "Failed to open the playback device\n";
-      return -1;
-    }
+    if (ma_device_init(nullptr, &device_config, &device) != MA_SUCCESS)
+      throw Error("Failed to open the playback device");
 
     if (ma_device_start(&device) != MA_SUCCESS) {
       ma_device_uninit(&device);
-      return -1;
+      throw Error("Failed to start the playback device");
     }
-
-    int buffer_size = device.playback.internalPeriodSizeInFrames;
-    std::cout << "Buffer size: " << buffer_size << "\n";
 
     Vector2 window_size = {900, 700};
     SetTraceLogLevel(LOG_WARNING);
@@ -94,18 +89,17 @@ int main() {
       ClearBackground(BLACK);
       BeginDrawing();
 
-      auto bars = analyzer.get_bars(playback_sample_index);
+      auto bars = analyzer.get_bars(data.sample_offset);
       if (bars.size() > 0)
         draw_bars(bars, window_size);
 
       EndDrawing();
     }
 
+    ma_decoder_uninit(&decoder);
     ma_device_uninit(&device);
 
     CloseWindow();
-    stopper.request_stop();
-    t1.join();
   } catch (const std::runtime_error &error) {
     std::cout << error.what() << "\n";
     return -1;
