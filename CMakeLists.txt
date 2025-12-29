@@ -23,19 +23,8 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(miniaudio)
 
-find_package(PkgConfig REQUIRED)
-pkg_check_modules(ffmepg_libav REQUIRED IMPORTED_TARGET
-     libavcodec
-     libavutil
-     libavformat
-     libswresample
-)
-
 add_executable(${PROJECT_NAME}
     src/main.cpp
-    src/fft.cpp
-    src/decoder.cpp
+    src/analyzer.cpp
 )
-target_include_directories(${PROJECT_NAME} PRIVATE include)
-target_link_libraries(${PROJECT_NAME} raylib PkgConfig::ffmepg_libav miniaudio)
-target_link_libraries(${PROJECT_NAME} asound pulse pthread dl m)
+target_link_libraries(${PROJECT_NAME} raylib miniaudio)

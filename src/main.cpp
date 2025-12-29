@@ -1,16 +1,17 @@
 #include <algorithm>
 #include <iostream>
 
+#define MINIAUDIO_IMPLEMENTATION
 #include <miniaudio.h>
 #include <raylib.h>
 
+#include "analyzer.h"
 #include "error.h"
-#include "fft.h"
 
 struct CallbackData {
   ma_decoder *decoder;
   SpectrumAnalyzer *analyzer;
-  unsigned long long sample_offset;
+  float_vec fft_bars;
   bool done;
 };
 
@@ -26,8 +27,7 @@ void data_callback(ma_device *device, void *output, const void *input,
     return;
   }
 
-  ma_decoder_get_cursor_in_pcm_frames(data->decoder, &data->sample_offset);
-  data->analyzer->process((int16_t *)output, samples_read, data->sample_offset);
+  data->fft_bars = data->analyzer->process((int16_t *)output, samples_read);
 }
 
 void draw_bars(std::vector<float> bars, Vector2 window_size) {
@@ -54,14 +54,12 @@ int main() {
 
     ma_decoder decoder;
     ma_decoder_config decoder_config =
-        ma_decoder_config_init(ma_format_s16, 1, 41000);
-    ma_result result = ma_decoder_init_file(path, &decoder_config, &decoder);
-    std::cout << result << "\n";
-    if (result != MA_SUCCESS)
+        ma_decoder_config_init(ma_format_s16, 1, 44100);
+    if (ma_decoder_init_file(path, &decoder_config, &decoder) != MA_SUCCESS)
       throw Error("Failed to initialize the decoder");
 
     SpectrumAnalyzer analyzer(decoder.outputSampleRate);
-    CallbackData data = {&decoder, &analyzer, 0, false};
+    CallbackData data = {&decoder, &analyzer, {}, false};
 
     ma_device device;
     ma_device_config device_config =
@@ -85,13 +83,21 @@ int main() {
     InitWindow(window_size.x, window_size.y, "didact");
     SetTargetFPS(60);
 
+    float_vec prev_bars;
+
     while (!WindowShouldClose()) {
       ClearBackground(BLACK);
       BeginDrawing();
 
-      auto bars = analyzer.get_bars(data.sample_offset);
-      if (bars.size() > 0)
-        draw_bars(bars, window_size);
+      if (data.done)
+        break;
+
+      if (data.fft_bars.size() > 0) {
+        draw_bars(data.fft_bars, window_size);
+        prev_bars = data.fft_bars;
+      } else if (prev_bars.size() > 0) {
+        draw_bars(prev_bars, window_size);
+      }
 
       EndDrawing();
     }
