@@ -35,7 +35,7 @@ void draw_bars(std::vector<float> bars, Vector2 window_size) {
   float min = *(std::min_element(bars.begin(), bars.end()));
   float max = *(std::max_element(bars.begin(), bars.end()));
 
-  Vector2 bar_size = {5, 200};
+  Vector2 bar_size = {5, 100};
   float start_x = window_size.x / 2.0f;
 
   for (int i = -(num_bars - 1); i < num_bars; i++) {
@@ -92,12 +92,16 @@ int main() {
       if (data.done)
         break;
 
-      if (data.fft_bars.size() > 0) {
-        draw_bars(data.fft_bars, window_size);
-        prev_bars = data.fft_bars;
-      } else if (prev_bars.size() > 0) {
-        draw_bars(prev_bars, window_size);
+      if (data.fft_bars.size() > 0 && prev_bars.size() > 0) {
+        // Interpolate between the 2 frames
+        float decay = 0.4;
+        float_vec bars(data.fft_bars.size());
+        for (int i = 0; i < bars.size(); i++) {
+          bars[i] = prev_bars[i] * (1 - decay) + data.fft_bars[i] * decay;
+        }
+        draw_bars(bars, window_size);
       }
+      prev_bars = data.fft_bars;
 
       EndDrawing();
     }

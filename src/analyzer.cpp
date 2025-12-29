@@ -1,5 +1,4 @@
 #include <algorithm>
-#include <assert.h>
 #include <complex>
 
 #include "analyzer.h"
@@ -86,17 +85,19 @@ void SpectrumAnalyzer::fill_input_buffer(int16_t *data, int size) {
   if (m_input_buffer.size() != m_input_size)
     m_input_buffer.resize(m_input_size, 0);
 
-  int overflow = m_write_offset + size - m_input_size;
-  if (overflow > 0) {
-    // Shift the buffer to the left to make space for the new data
-    std::move(m_input_buffer.begin() + overflow, m_input_buffer.end(),
-              m_input_buffer.begin());
-    m_write_offset -= overflow;
-  }
+  // Fill up to the end of the buffer
+  int initial_size = m_write_offset + size < m_input_size
+                         ? size
+                         : m_input_size - m_write_offset;
+  std::copy(data, data + initial_size, m_input_buffer.begin() + m_write_offset);
+  m_write_offset += initial_size;
 
-  // Fill the sliding input buffer with new samples
-  std::copy(data, data + size, m_input_buffer.begin() + m_write_offset);
-  m_write_offset += size;
+  // Wrap back around and copy the reminaing data
+  int remaining = size - initial_size;
+  if (remaining > 0) {
+    std::copy(data + initial_size, data + size, m_input_buffer.begin());
+    m_write_offset = remaining;
+  }
 }
 
 float_vec SpectrumAnalyzer::get_frequency_bins() {
@@ -105,8 +106,9 @@ float_vec SpectrumAnalyzer::get_frequency_bins() {
   cdata preprocessed(m_input_size, complex(0, 0));
   float window_const = 2.0 * pi / (m_input_size - 1);
   for (int i = 0; i < m_input_size; i++) {
+    int index = (m_write_offset + i) % m_input_size;
     float hamming = 0.54 - 0.46 * std::cos(window_const * i);
-    preprocessed[i] = complex(float(m_input_buffer[i]) * hamming);
+    preprocessed[index] = complex(float(m_input_buffer[index]) * hamming);
   }
 
   cdata output = fft(preprocessed, false);
