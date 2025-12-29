@@ -1,15 +1,13 @@
 #include <algorithm>
 #include <iostream>
 
-#define MINIAUDIO_IMPLEMENTATION
-#include <miniaudio.h>
 #include <raylib.h>
 
 #include "analyzer.h"
-#include "error.h"
+#include "audio.h"
 
 struct CallbackData {
-  ma_decoder *decoder;
+  Codec *codec;
   SpectrumAnalyzer *analyzer;
   float_vec fft_bars;
   bool done;
@@ -19,15 +17,18 @@ void data_callback(ma_device *device, void *output, const void *input,
                    ma_uint32 num_samples) {
   CallbackData *data = (CallbackData *)device->pUserData;
 
-  unsigned long long samples_read = 0;
-  ma_result result = ma_decoder_read_pcm_frames(data->decoder, output,
-                                                num_samples, &samples_read);
-  if (samples_read < num_samples) {
+  ma_uint64 size = data->codec->process_frame(input, output, num_samples);
+  if (size < num_samples) {
     data->done = true;
     return;
   }
 
-  data->fft_bars = data->analyzer->process((int16_t *)output, samples_read);
+  int16_t *ptr = (int16_t *)(data->codec->encoding() ? input : output);
+  data->fft_bars = data->analyzer->process(ptr, size);
+}
+
+void logger(void *data, ma_uint32 level, const char *msg) {
+  std::cout << "[miniaudio]: " << msg << "\n";
 }
 
 void draw_bars(std::vector<float> bars, Vector2 window_size) {
@@ -48,35 +49,18 @@ void draw_bars(std::vector<float> bars, Vector2 window_size) {
   }
 }
 
-int main() {
+int main(int argc, char **argv) {
   try {
-    const char *path = "../assets/fly-me-to-the-moon.mp3";
+    if (argc != 3)
+      throw Error("Usage: didact [ --microphone | --file ] <PATH>");
 
-    ma_decoder decoder;
-    ma_decoder_config decoder_config =
-        ma_decoder_config_init(ma_format_s16, 1, 44100);
-    if (ma_decoder_init_file(path, &decoder_config, &decoder) != MA_SUCCESS)
-      throw Error("Failed to initialize the decoder");
+    if (strcmp(argv[1], "--microphone") != 0 && strcmp(argv[1], "--file") != 0)
+      throw Error("Usage: didact [ --microphone | --file ] <PATH>");
 
-    SpectrumAnalyzer analyzer(decoder.outputSampleRate);
-    CallbackData data = {&decoder, &analyzer, {}, false};
-
-    ma_device device;
-    ma_device_config device_config =
-        ma_device_config_init(ma_device_type_playback);
-    device_config.playback.format = decoder.outputFormat;
-    device_config.playback.channels = decoder.outputChannels;
-    device_config.sampleRate = decoder.outputSampleRate;
-    device_config.dataCallback = data_callback;
-    device_config.pUserData = &data;
-
-    if (ma_device_init(nullptr, &device_config, &device) != MA_SUCCESS)
-      throw Error("Failed to open the playback device");
-
-    if (ma_device_start(&device) != MA_SUCCESS) {
-      ma_device_uninit(&device);
-      throw Error("Failed to start the playback device");
-    }
+    Codec codec(strcmp(argv[1], "--microphone") == 0, argv[2]);
+    SpectrumAnalyzer analyzer(codec.sample_rate());
+    CallbackData data = {&codec, &analyzer, {}, false};
+    Device device(codec, data_callback, logger, (void *)&data);
 
     Vector2 window_size = {900, 700};
     SetTraceLogLevel(LOG_WARNING);
@@ -105,9 +89,6 @@ int main() {
 
       EndDrawing();
     }
-
-    ma_decoder_uninit(&decoder);
-    ma_device_uninit(&device);
 
     CloseWindow();
   } catch (const std::runtime_error &error) {
