@@ -1,7 +1,15 @@
 #include <algorithm>
 #include <iostream>
 
-#include <raylib.h>
+#include <SDL3/SDL.h>
+#include <SDL3/SDL_main.h>
+
+#include <backends/imgui_impl_sdl3.h>
+#include <backends/imgui_impl_sdlrenderer3.h>
+#include <imgui.h>
+
+#include <renamenoise.h>
+#include <whisper.h>
 
 #include "analyzer.h"
 #include "audio.h"
@@ -31,25 +39,34 @@ void logger(void *data, ma_uint32 level, const char *msg) {
   std::cout << "[miniaudio]: " << msg << "\n";
 }
 
-void draw_bars(std::vector<float> bars, Vector2 window_size) {
+void draw_bars(SDL_Renderer *renderer, std::vector<float> bars,
+               float window_width, float window_height) {
   int num_bars = bars.size();
   float min = *(std::min_element(bars.begin(), bars.end()));
   float max = *(std::max_element(bars.begin(), bars.end()));
 
-  Vector2 bar_size = {5, 100};
-  float start_x = window_size.x / 2.0f;
+  int bar_width = 5, bar_height = 100;
+  float start_x = window_width / 2.0f;
 
   for (int i = -(num_bars - 1); i < num_bars; i++) {
     float value = bars[abs(i)];
     float value_percent = (value - min) / (max - min);
-    float height = value_percent * bar_size.y;
-    float x = start_x + 2 * (i * bar_size.x);
-    float center_y = window_size.y / 2.0f - height / 2.0f;
-    DrawRectangle(x, center_y, bar_size.x, height, WHITE);
+
+    SDL_FRect rect;
+    rect.w = bar_width;
+    rect.h = value_percent * bar_height;
+    rect.x = start_x + 2 * (i * rect.w);
+    rect.y = window_height / 2.0f - rect.h / 2.0f;
+
+    SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);
+    SDL_RenderFillRect(renderer, &rect);
   }
 }
 
 int main(int argc, char **argv) {
+  SDL_Window *window = nullptr;
+  SDL_Renderer *renderer = nullptr;
+
   try {
     if (argc != 3)
       throw Error("Usage: didact [ --microphone | --file ] <PATH>");
@@ -62,19 +79,41 @@ int main(int argc, char **argv) {
     CallbackData data = {&codec, &analyzer, {}, false};
     Device device(codec, data_callback, logger, (void *)&data);
 
-    Vector2 window_size = {900, 700};
-    SetTraceLogLevel(LOG_WARNING);
-    InitWindow(window_size.x, window_size.y, "didact");
-    SetTargetFPS(60);
+    if (!SDL_Init(SDL_INIT_VIDEO))
+      throw Error(SDL_GetError());
 
+    int window_width = 900;
+    int window_height = 700;
+    int flags = SDL_WINDOW_RESIZABLE;
+    window = SDL_CreateWindow("didact", window_width, window_height, flags);
+    if (!window)
+      throw Error(SDL_GetError());
+    SDL_SetWindowPosition(window, SDL_WINDOWPOS_CENTERED,
+                          SDL_WINDOWPOS_CENTERED);
+
+    renderer = SDL_CreateRenderer(window, nullptr);
+    if (!renderer)
+      throw Error(SDL_GetError());
+    SDL_SetRenderVSync(renderer, 1);
+
+    SDL_Event event;
+    bool running = true;
     float_vec prev_bars;
 
-    while (!WindowShouldClose()) {
-      ClearBackground(BLACK);
-      BeginDrawing();
+    while (running) {
+      while (SDL_PollEvent(&event)) {
+        switch (event.type) {
+        case SDL_EVENT_QUIT:
+          running = false;
+          break;
+        }
+      }
 
       if (data.done)
         break;
+
+      SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
+      SDL_RenderClear(renderer);
 
       if (data.fft_bars.size() > 0 && prev_bars.size() > 0) {
         // Interpolate between the 2 frames
@@ -83,18 +122,20 @@ int main(int argc, char **argv) {
         for (int i = 0; i < bars.size(); i++) {
           bars[i] = prev_bars[i] * (1 - decay) + data.fft_bars[i] * decay;
         }
-        draw_bars(bars, window_size);
+        draw_bars(renderer, bars, window_width, window_height);
       }
       prev_bars = data.fft_bars;
 
-      EndDrawing();
+      SDL_RenderPresent(renderer);
     }
 
-    CloseWindow();
   } catch (const std::runtime_error &error) {
-    std::cout << error.what() << "\n";
+    SDL_Log(error.what(), "\n");
     return -1;
   }
 
+  SDL_DestroyRenderer(renderer);
+  SDL_DestroyWindow(window);
+  SDL_Quit();
   return 0;
 }
