@@ -8,15 +8,15 @@
 #include <backends/imgui_impl_sdlrenderer3.h>
 #include <imgui.h>
 
-#include <renamenoise.h>
 #include <whisper.h>
 
 #include "analyzer.h"
-#include "audio.h"
+#include "microphone.h"
 
 struct CallbackData {
-  Codec *codec;
+  MicrophoneCapture *device;
   SpectrumAnalyzer *analyzer;
+  Denoiser *denoiser;
   float_vec fft_bars;
   bool done;
 };
@@ -25,14 +25,14 @@ void data_callback(ma_device *device, void *output, const void *input,
                    ma_uint32 num_samples) {
   CallbackData *data = (CallbackData *)device->pUserData;
 
-  ma_uint64 size = data->codec->process_frame(input, output, num_samples);
+  auto processed = data->denoiser->process((int16_t *)input, num_samples);
+  data->fft_bars = data->analyzer->process(processed.data(), num_samples);
+
+  ma_uint64 size = data->device->save_frame(processed.data(), num_samples);
   if (size < num_samples) {
     data->done = true;
     return;
   }
-
-  int16_t *ptr = (int16_t *)(data->codec->encoding() ? input : output);
-  data->fft_bars = data->analyzer->process(ptr, size);
 }
 
 void logger(void *data, ma_uint32 level, const char *msg) {
@@ -63,21 +63,20 @@ void draw_bars(SDL_Renderer *renderer, std::vector<float> bars,
   }
 }
 
-int main(int argc, char **argv) {
+int main() {
   SDL_Window *window = nullptr;
   SDL_Renderer *renderer = nullptr;
 
   try {
-    if (argc != 3)
-      throw Error("Usage: didact [ --microphone | --file ] <PATH>");
-
-    if (strcmp(argv[1], "--microphone") != 0 && strcmp(argv[1], "--file") != 0)
-      throw Error("Usage: didact [ --microphone | --file ] <PATH>");
-
-    Codec codec(strcmp(argv[1], "--microphone") == 0, argv[2]);
-    SpectrumAnalyzer analyzer(codec.sample_rate());
-    CallbackData data = {&codec, &analyzer, {}, false};
-    Device device(codec, data_callback, logger, (void *)&data);
+    CallbackData data;
+    MicrophoneCapture capture("test.wav", logger, data_callback, (void *)&data);
+    SpectrumAnalyzer analyzer(capture.sample_rate());
+    Denoiser denoiser;
+    data = {.device = &capture,
+            .analyzer = &analyzer,
+            .denoiser = &denoiser,
+            .fft_bars = {},
+            .done = false};
 
     if (!SDL_Init(SDL_INIT_VIDEO))
       throw Error(SDL_GetError());
