@@ -1,5 +1,4 @@
 #include <algorithm>
-#include <iostream>
 
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_main.h>
@@ -11,32 +10,41 @@
 #include <whisper.h>
 
 #include "analyzer.h"
-#include "microphone.h"
+#include "audio.h"
+#include "error.h"
 
-struct CallbackData {
-  MicrophoneCapture *device;
-  SpectrumAnalyzer *analyzer;
+struct AudioProcessor {
+  AudioDevice *device;
   Denoiser *denoiser;
+  SpectrumAnalyzer *analyzer;
   float_vec fft_bars;
-  bool done;
+  bool capturing;
+
+  void process_frames(bool flush) {
+    while (denoiser->have_frame(flush)) {
+      auto samples = denoiser->process();
+      if (!flush)
+        fft_bars = analyzer->process(samples.data(), samples.size());
+
+      device->process_frame(samples.data(), nullptr, samples.size());
+    }
+  }
 };
 
 void data_callback(ma_device *device, void *output, const void *input,
-                   ma_uint32 num_samples) {
-  CallbackData *data = (CallbackData *)device->pUserData;
+                   ma_uint32 input_size) {
+  AudioProcessor *ap = (AudioProcessor *)device->pUserData;
 
-  auto processed = data->denoiser->process((int16_t *)input, num_samples);
-  data->fft_bars = data->analyzer->process(processed.data(), num_samples);
-
-  ma_uint64 size = data->device->save_frame(processed.data(), num_samples);
-  if (size < num_samples) {
-    data->done = true;
+  // Don't denoise the audio that is being streamed from a file
+  if (!ap->capturing) {
+    ma_uint64 read = ap->device->process_frame(nullptr, output, input_size);
+    ap->fft_bars = ap->analyzer->process((int16_t *)output, read);
     return;
   }
-}
 
-void logger(void *data, ma_uint32 level, const char *msg) {
-  std::cout << "[miniaudio]: " << msg << "\n";
+  // Only process denoised samples when capturing audio from the micrpphone
+  ap->denoiser->add_samples((int16_t *)input, input_size);
+  ap->process_frames(false);
 }
 
 void draw_bars(SDL_Renderer *renderer, std::vector<float> bars,
@@ -68,15 +76,17 @@ int main() {
   SDL_Renderer *renderer = nullptr;
 
   try {
-    CallbackData data;
-    MicrophoneCapture capture("test.wav", logger, data_callback, (void *)&data);
-    SpectrumAnalyzer analyzer(capture.sample_rate());
     Denoiser denoiser;
-    data = {.device = &capture,
-            .analyzer = &analyzer,
-            .denoiser = &denoiser,
-            .fft_bars = {},
-            .done = false};
+    AudioProcessor data;
+    AudioDevice device(data_callback, &data, "test.wav", true);
+    SpectrumAnalyzer analyzer(device.sample_rate());
+
+    data.device = &device;
+    data.denoiser = &denoiser;
+    data.analyzer = &analyzer;
+    data.fft_bars = {};
+    data.capturing = true; // hardcoding for now
+    device.start();
 
     if (!SDL_Init(SDL_INIT_VIDEO))
       throw Error(SDL_GetError());
@@ -108,9 +118,6 @@ int main() {
         }
       }
 
-      if (data.done)
-        break;
-
       SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
       SDL_RenderClear(renderer);
 
@@ -127,6 +134,9 @@ int main() {
 
       SDL_RenderPresent(renderer);
     }
+
+    // Flush any remaining audio frames in the denoiser's queue
+    data.process_frames(true);
 
   } catch (const std::runtime_error &error) {
     SDL_Log(error.what(), "\n");

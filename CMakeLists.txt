@@ -75,7 +75,9 @@ FetchContent_MakeAvailable(whispercpp)
 add_executable(${PROJECT_NAME}
     src/main.cpp
     src/analyzer.cpp
+    src/audio.cpp
 )
+
 target_link_libraries(
     ${PROJECT_NAME}
     SDL3::SDL3
@@ -84,4 +86,5 @@ target_link_libraries(
     whisper
     imgui
 )
+
 target_include_directories(${PROJECT_NAME} PUBLIC ${imgui_SOURCE_DIR})

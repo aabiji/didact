@@ -108,7 +108,7 @@ float_vec SpectrumAnalyzer::get_frequency_bins() {
   for (int i = 0; i < m_input_size; i++) {
     int index = (m_write_offset + i) % m_input_size;
     float hamming = 0.54 - 0.46 * std::cos(window_const * i);
-    preprocessed[index] = complex(float(m_input_buffer[index]) * hamming);
+    preprocessed[i] = complex(float(m_input_buffer[index]) * hamming);
   }
 
   cdata output = fft(preprocessed, false);
