@@ -122,11 +122,10 @@ int main() {
       SDL_RenderClear(renderer);
 
       if (data.fft_bars.size() > 0 && prev_bars.size() > 0) {
-        // Interpolate between the 2 frames
-        float decay = 0.4;
+        // Peek decay between frames (rise sharply then fall slowly)
         float_vec bars(data.fft_bars.size());
         for (int i = 0; i < bars.size(); i++) {
-          bars[i] = prev_bars[i] * (1 - decay) + data.fft_bars[i] * decay;
+          bars[i] = std::max(data.fft_bars[i], prev_bars[i] * 0.85f);
         }
         draw_bars(renderer, bars, window_width, window_height);
       }

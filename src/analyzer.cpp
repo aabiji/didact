@@ -69,6 +69,23 @@ SpectrumAnalyzer::SpectrumAnalyzer(int sample_rate) {
 }
 
 float_vec SpectrumAnalyzer::process(int16_t *samples, int length) {
+  // Apply a crude noise gate:
+  // Clear the input buffer if the input only coantains "silence"
+  bool silent = true;
+  float threshold = 150.0f;
+  for (int i = 0; i < length; i++) {
+    if (std::abs(samples[i]) > threshold) {
+      silent = false;
+      break;
+    }
+  }
+
+  if (silent) {
+    std::fill(m_input_buffer.begin(), m_input_buffer.end(), 0);
+    m_write_offset = 0;
+    return float_vec(m_num_bars, 0.0f);
+  }
+
   fill_input_buffer(samples, length);
   auto bins = get_frequency_bins();
   return map_bins_to_bars(bins);
@@ -121,7 +138,8 @@ float_vec SpectrumAnalyzer::get_frequency_bins() {
     float scale =
         i == 0 ? 1.0 / float(m_input_size) : 2.0 / float(m_input_size);
     float magnitude = std::abs(output[i]) * scale;
-    frequency_bins[i] = magnitude;
+    // Apply a crude noise floor:
+    frequency_bins[i] = magnitude < 15.0f ? 0.0f : magnitude;
   }
 
   return frequency_bins;
