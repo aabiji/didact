@@ -68,7 +68,7 @@ SpectrumAnalyzer::SpectrumAnalyzer(int sample_rate) {
   m_input_size = 1024;
 }
 
-float_vec SpectrumAnalyzer::process(int16_t *samples, int length) {
+float_vec SpectrumAnalyzer::process(int16_t* samples, int length) {
   // Apply a crude noise gate:
   // Clear the input buffer if the input only coantains "silence"
   bool silent = true;
@@ -91,7 +91,7 @@ float_vec SpectrumAnalyzer::process(int16_t *samples, int length) {
   return map_bins_to_bars(bins);
 }
 
-void SpectrumAnalyzer::fill_input_buffer(int16_t *data, int size) {
+void SpectrumAnalyzer::fill_input_buffer(int16_t* data, int size) {
   // Ensure the input buffer is big enough for the new data. Also ensure
   // that the new input size is a power of 2, so that the FFT works correctly.
   if (size > m_input_size) {

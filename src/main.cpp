@@ -14,9 +14,9 @@
 #include "error.h"
 
 struct AudioProcessor {
-  AudioDevice *device;
-  Denoiser *denoiser;
-  SpectrumAnalyzer *analyzer;
+  AudioDevice* device;
+  Denoiser* denoiser;
+  SpectrumAnalyzer* analyzer;
   float_vec fft_bars;
   bool capturing;
 
@@ -31,23 +31,23 @@ struct AudioProcessor {
   }
 };
 
-void data_callback(ma_device *device, void *output, const void *input,
+void data_callback(ma_device* device, void* output, const void* input,
                    ma_uint32 input_size) {
-  AudioProcessor *ap = (AudioProcessor *)device->pUserData;
+  AudioProcessor* ap = (AudioProcessor*)device->pUserData;
 
   // Don't denoise the audio that is being streamed from a file
   if (!ap->capturing) {
     ma_uint64 read = ap->device->process_frame(nullptr, output, input_size);
-    ap->fft_bars = ap->analyzer->process((int16_t *)output, read);
+    ap->fft_bars = ap->analyzer->process((int16_t*)output, read);
     return;
   }
 
   // Only process denoised samples when capturing audio from the micrpphone
-  ap->denoiser->add_samples((int16_t *)input, input_size);
+  ap->denoiser->add_samples((int16_t*)input, input_size);
   ap->process_frames(false);
 }
 
-void draw_bars(SDL_Renderer *renderer, std::vector<float> bars,
+void draw_bars(SDL_Renderer* renderer, std::vector<float> bars,
                float window_width, float window_height) {
   int num_bars = bars.size();
   float min = *(std::min_element(bars.begin(), bars.end()));
@@ -72,8 +72,8 @@ void draw_bars(SDL_Renderer *renderer, std::vector<float> bars,
 }
 
 int main() {
-  SDL_Window *window = nullptr;
-  SDL_Renderer *renderer = nullptr;
+  SDL_Window* window = nullptr;
+  SDL_Renderer* renderer = nullptr;
 
   try {
     Denoiser denoiser;
@@ -137,7 +137,7 @@ int main() {
     // Flush any remaining audio frames in the denoiser's queue
     data.process_frames(true);
 
-  } catch (const std::runtime_error &error) {
+  } catch (const std::runtime_error& error) {
     SDL_Log(error.what(), "\n");
     return -1;
   }

@@ -11,8 +11,8 @@ AudioDevice::~AudioDevice() {
     ma_decoder_uninit(&m_decoder);
 }
 
-AudioDevice::AudioDevice(ma_device_data_proc callback, void *user_data,
-                         const char *path, bool capturing) {
+AudioDevice::AudioDevice(ma_device_data_proc callback, void* user_data,
+                         const char* path, bool capturing) {
   m_capturing = capturing;
   init_codec(path);
 
@@ -34,7 +34,7 @@ AudioDevice::AudioDevice(ma_device_data_proc callback, void *user_data,
     throw Error("Failed to open the device");
 }
 
-void AudioDevice::init_codec(const char *path) {
+void AudioDevice::init_codec(const char* path) {
   if (m_capturing) {
     // This is because RNNoise takes in 10 second frames at
     // 48000 Hz and it would be nicer to avoid resampling.
@@ -58,7 +58,7 @@ void AudioDevice::start() {
     throw Error("Failed to start the device");
 }
 
-ma_uint64 AudioDevice::process_frame(const void *input, void *output,
+ma_uint64 AudioDevice::process_frame(const void* input, void* output,
                                      ma_uint32 num_samples) {
   if (m_capturing) {
     ma_uint64 samples_written;
@@ -79,7 +79,7 @@ Denoiser::Denoiser() {
   m_queue.init(renamenoise_get_frame_size() * 5);
 }
 
-void Denoiser::add_samples(int16_t *input, int size) {
+void Denoiser::add_samples(int16_t* input, int size) {
   std::vector<float> converted(size, 0.0);
   for (int i = 0; i < size; i++) {
     converted[i] = input[i];
