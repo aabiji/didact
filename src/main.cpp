@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <iostream>
 
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_main.h>
@@ -7,63 +8,47 @@
 #include <backends/imgui_impl_sdlrenderer3.h>
 #include <imgui.h>
 
-#include <whisper.h>
-
 #include "analyzer.h"
 #include "audio.h"
 #include "error.h"
+#include "tts.h"
 
-struct AudioProcessor {
-  AudioDevice* device;
-  Denoiser* denoiser;
+struct CallbackData {
+  AudioStream* stream;
   SpectrumAnalyzer* analyzer;
   float_vec fft_bars;
-  bool capturing;
-
-  void process_frames(bool flush) {
-    while (denoiser->have_frame(flush)) {
-      auto samples = denoiser->process();
-      if (!flush)
-        fft_bars = analyzer->process(samples.data(), samples.size());
-
-      device->process_frame(samples.data(), nullptr, samples.size());
-    }
-  }
 };
 
-void data_callback(ma_device* device, void* output, const void* input,
-                   ma_uint32 input_size) {
-  AudioProcessor* ap = (AudioProcessor*)device->pUserData;
+void data_callback(ma_device* stream, void* output, const void* input, ma_uint32 size) {
+  CallbackData* d = (CallbackData*)stream->pUserData;
+  d->stream->queue_samples(input, output, size);
 
-  // Don't denoise the audio that is being streamed from a file
-  if (!ap->capturing) {
-    ma_uint64 read = ap->device->process_frame(nullptr, output, input_size);
-    ap->fft_bars = ap->analyzer->process((int16_t*)output, read);
-    return;
+  while (d->stream->have_chunk(false)) {
+    auto samples = d->stream->get_chunk();
+    d->fft_bars = d->analyzer->process(samples.data(), (int)samples.size());
+    d->stream->write_samples(samples.data(), (ma_uint32)samples.size());
   }
-
-  // Only process denoised samples when capturing audio from the micrpphone
-  ap->denoiser->add_samples((int16_t*)input, input_size);
-  ap->process_frames(false);
 }
 
-void draw_bars(SDL_Renderer* renderer, std::vector<float> bars,
-               float window_width, float window_height) {
-  int num_bars = bars.size();
+void text_handler(std::string text) { std::cout << text << "\n"; }
+
+void draw_bars(SDL_Renderer* renderer, std::vector<float> bars, float window_width,
+               float window_height) {
+  size_t num_bars = bars.size();
   float min = *(std::min_element(bars.begin(), bars.end()));
   float max = *(std::max_element(bars.begin(), bars.end()));
 
-  int bar_width = 5, bar_height = 100;
+  float bar_width = 5, bar_height = 100;
   float start_x = window_width / 2.0f;
 
-  for (int i = -(num_bars - 1); i < num_bars; i++) {
-    float value = bars[abs(i)];
+  for (size_t i = -(num_bars - 1); i < num_bars; i++) {
+    float value = bars[(size_t)abs((int)i)];
     float value_percent = (value - min) / (max - min);
 
     SDL_FRect rect;
     rect.w = bar_width;
     rect.h = value_percent * bar_height;
-    rect.x = start_x + 2 * (i * rect.w);
+    rect.x = start_x + 2 * ((float)i * rect.w);
     rect.y = window_height / 2.0f - rect.h / 2.0f;
 
     SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);
@@ -76,29 +61,29 @@ int main() {
   SDL_Renderer* renderer = nullptr;
 
   try {
-    Denoiser denoiser;
-    AudioProcessor data;
-    AudioDevice device(data_callback, &data, "test.wav", true);
-    SpectrumAnalyzer analyzer(device.sample_rate());
+    CallbackData data;
+    AudioStream stream(data_callback, &data, "test.wav", true);
+    SpectrumAnalyzer analyzer((int)stream.sample_rate());
 
-    data.device = &device;
-    data.denoiser = &denoiser;
+    std::stop_source stopper;
+    TTS tts("../assets/ggml-base.en.bin", stopper.get_token());
+    std::thread thread([&] { tts.run_inference(text_handler); });
+
+    data.stream = &stream;
     data.analyzer = &analyzer;
     data.fft_bars = {};
-    data.capturing = true; // hardcoding for now
-    device.start();
+    stream.start();
 
     if (!SDL_Init(SDL_INIT_VIDEO))
       throw Error(SDL_GetError());
 
     int window_width = 900;
     int window_height = 700;
-    int flags = SDL_WINDOW_RESIZABLE;
+    SDL_WindowFlags flags = SDL_WINDOW_RESIZABLE;
     window = SDL_CreateWindow("didact", window_width, window_height, flags);
     if (!window)
       throw Error(SDL_GetError());
-    SDL_SetWindowPosition(window, SDL_WINDOWPOS_CENTERED,
-                          SDL_WINDOWPOS_CENTERED);
+    SDL_SetWindowPosition(window, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED);
 
     renderer = SDL_CreateRenderer(window, nullptr);
     if (!renderer)
@@ -124,10 +109,10 @@ int main() {
       if (data.fft_bars.size() > 0 && prev_bars.size() > 0) {
         // Peek decay between frames (rise sharply then fall slowly)
         float_vec bars(data.fft_bars.size());
-        for (int i = 0; i < bars.size(); i++) {
+        for (size_t i = 0; i < bars.size(); i++) {
           bars[i] = std::max(data.fft_bars[i], prev_bars[i] * 0.85f);
         }
-        draw_bars(renderer, bars, window_width, window_height);
+        draw_bars(renderer, bars, (float)window_width, (float)window_height);
       }
       prev_bars = data.fft_bars;
 
@@ -135,7 +120,13 @@ int main() {
     }
 
     // Flush any remaining audio frames in the denoiser's queue
-    data.process_frames(true);
+    while (stream.have_chunk(true)) {
+      auto samples = stream.get_chunk();
+      stream.write_samples(samples.data(), (ma_uint32)samples.size());
+    }
+
+    stopper.request_stop();
+    thread.join();
 
   } catch (const std::runtime_error& error) {
     SDL_Log(error.what(), "\n");

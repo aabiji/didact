@@ -76,6 +76,7 @@ add_executable(${PROJECT_NAME}
     src/main.cpp
     src/analyzer.cpp
     src/audio.cpp
+    src/tts.cpp
 )
 
 target_link_libraries(
