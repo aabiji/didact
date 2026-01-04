@@ -1,4 +1,3 @@
-#include <stop_token>
 #include <thread>
 
 #include "error.h"
@@ -32,8 +31,7 @@ void TTS::queue_samples(float* samples, int num_samples) {
 
 void TTS::run_inference(HandleText handler) {
   while (!m_token.stop_requested()) {
-    auto samples = m_queue.pop_samples(CHUNK_SAMPLES, true);
-
+    auto samples = m_queue.pop_samples(CHUNK_SAMPLES, m_token);
     if (whisper_full(m_ctx, m_fparams, samples.data(), (int)samples.size()) != 0)
       throw Error("Failed to process audio");
 

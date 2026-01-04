@@ -145,7 +145,7 @@ float_vec SpectrumAnalyzer::get_frequency_bins() {
 }
 
 float_vec SpectrumAnalyzer::map_bins_to_bars(float_vec frequency_bins) {
-  float bin_frequency_spacing = float(m_sample_rate) / float(m_input_size);
+  float bin_frequency_spacing = (float)m_sample_rate / (float)m_input_size;
   float min_freq = 40, max_freq = (float)m_sample_rate / 2.0f;
   float ratio = max_freq / min_freq;
 
@@ -156,8 +156,8 @@ float_vec SpectrumAnalyzer::map_bins_to_bars(float_vec frequency_bins) {
   // 1000 Hz sounds as if the frequency were going from 10 Hz to 20 Hz
   for (size_t i = 0; i < m_num_bars; i++) {
     // Each bar will cover a larger and larger frequency range
-    float freq_start = min_freq * std::pow(ratio, float(i) / float(m_num_bars));
-    float freq_end = min_freq * std::pow(ratio, float(i + 1) / float(m_num_bars));
+    float freq_start = min_freq * std::pow(ratio, (float)i / (float)m_num_bars);
+    float freq_end = min_freq * std::pow(ratio, (float)(i + 1) / (float)m_num_bars);
 
     int bin_start = (int)std::floor(freq_start / bin_frequency_spacing);
     int bin_end = (int)std::floor(freq_end / bin_frequency_spacing);

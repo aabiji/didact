@@ -16,17 +16,22 @@
 struct CallbackData {
   AudioStream* stream;
   SpectrumAnalyzer* analyzer;
+  TTS* tts;
   float_vec fft_bars;
+  std::stop_token token;
 };
 
-void data_callback(ma_device* stream, void* output, const void* input, ma_uint32 size) {
+void data_callback(ma_device* stream, void* output, const void* input, u32 size) {
   CallbackData* d = (CallbackData*)stream->pUserData;
   d->stream->queue_samples(input, output, size);
 
-  while (d->stream->have_chunk(false)) {
+  while (d->stream->have_chunk(false) && !d->token.stop_requested()) {
     auto samples = d->stream->get_chunk();
     d->fft_bars = d->analyzer->process(samples.data(), (int)samples.size());
-    d->stream->write_samples(samples.data(), (ma_uint32)samples.size());
+    d->stream->write_samples(samples.data(), (u32)samples.size());
+
+    auto resampled = d->stream->resample(samples.data(), samples.size());
+    d->tts->queue_samples(resampled.data(), resampled.size());
   }
 }
 
@@ -34,15 +39,15 @@ void text_handler(std::string text) { std::cout << text << "\n"; }
 
 void draw_bars(SDL_Renderer* renderer, std::vector<float> bars, float window_width,
                float window_height) {
-  size_t num_bars = bars.size();
+  int num_bars = (int)bars.size();
   float min = *(std::min_element(bars.begin(), bars.end()));
   float max = *(std::max_element(bars.begin(), bars.end()));
 
   float bar_width = 5, bar_height = 100;
   float start_x = window_width / 2.0f;
 
-  for (size_t i = -(num_bars - 1); i < num_bars; i++) {
-    float value = bars[(size_t)abs((int)i)];
+  for (int i = -(num_bars - 1); i < num_bars; i++) {
+    float value = bars[(size_t)abs(i)];
     float value_percent = (value - min) / (max - min);
 
     SDL_FRect rect;
@@ -61,18 +66,15 @@ int main() {
   SDL_Renderer* renderer = nullptr;
 
   try {
-    CallbackData data;
-    AudioStream stream(data_callback, &data, "test.wav", true);
-    SpectrumAnalyzer analyzer((int)stream.sample_rate());
-
     std::stop_source stopper;
     TTS tts("../assets/ggml-base.en.bin", stopper.get_token());
-    std::thread thread([&] { tts.run_inference(text_handler); });
+    AudioStream stream("test.wav", true);
+    SpectrumAnalyzer analyzer((int)stream.sample_rate());
+    CallbackData data = {&stream, &analyzer, &tts, {}, stopper.get_token()};
 
-    data.stream = &stream;
-    data.analyzer = &analyzer;
-    data.fft_bars = {};
-    stream.start();
+    stream.start(data_callback, &data);
+    stream.enable_resampler(1, 16000);
+    std::thread thread([&] { tts.run_inference(text_handler); });
 
     if (!SDL_Init(SDL_INIT_VIDEO))
       throw Error(SDL_GetError());
@@ -122,7 +124,7 @@ int main() {
     // Flush any remaining audio frames in the denoiser's queue
     while (stream.have_chunk(true)) {
       auto samples = stream.get_chunk();
-      stream.write_samples(samples.data(), (ma_uint32)samples.size());
+      stream.write_samples(samples.data(), (u32)samples.size());
     }
 
     stopper.request_stop();
