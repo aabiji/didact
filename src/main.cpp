@@ -11,12 +11,12 @@
 #include "analyzer.h"
 #include "audio.h"
 #include "error.h"
-#include "tts.h"
+#include "speech.h"
 
 struct CallbackData {
   AudioStream* stream;
   SpectrumAnalyzer* analyzer;
-  TTS* tts;
+  SpeechToText* stt;
   float_vec fft_bars;
   std::stop_token token;
 };
@@ -31,7 +31,7 @@ void data_callback(ma_device* stream, void* output, const void* input, u32 size)
     d->stream->write_samples(samples.data(), (u32)samples.size());
 
     auto resampled = d->stream->resample(samples.data(), samples.size());
-    d->tts->queue_samples(resampled.data(), resampled.size());
+    d->stt->process(resampled.data(), resampled.size());
   }
 }
 
@@ -67,14 +67,25 @@ int main() {
 
   try {
     std::stop_source stopper;
-    TTS tts("../assets/ggml-base.en.bin", stopper.get_token());
+
+    ModelPaths paths = {
+        .tokens = "../assets/sherpa-onnx-streaming-zipformer-en-2023-06-26/tokens.txt",
+        .encoder = "../assets/sherpa-onnx-streaming-zipformer-en-2023-06-26/"
+                   "encoder-epoch-99-avg-1-chunk-16-left-128.onnx",
+        .decoder = "../assets/sherpa-onnx-streaming-zipformer-en-2023-06-26/"
+                   "decoder-epoch-99-avg-1-chunk-16-left-128.onnx",
+        .joiner = "../assets/sherpa-onnx-streaming-zipformer-en-2023-06-26/"
+                  "joiner-epoch-99-avg-1-chunk-16-left-128.onnx",
+    };
+    SpeechToText stt(paths, text_handler);
+
     AudioStream stream("test.wav", true);
     SpectrumAnalyzer analyzer((int)stream.sample_rate());
-    CallbackData data = {&stream, &analyzer, &tts, {}, stopper.get_token()};
+    CallbackData data = {&stream, &analyzer, &stt, {}, stopper.get_token()};
 
     stream.start(data_callback, &data);
     stream.enable_resampler(1, 16000);
-    std::thread thread([&] { tts.run_inference(text_handler); });
+    std::thread thread([&] { stt.run_inference(stopper.get_token()); });
 
     if (!SDL_Init(SDL_INIT_VIDEO))
       throw Error(SDL_GetError());

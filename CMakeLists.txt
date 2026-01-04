@@ -3,8 +3,8 @@ project(didact)
 include(FetchContent)
 
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
-set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(BUILD_SHARED_LIBS ON CACHE BOOL "Build shared libraries" FORCE)
 
 # SDL3
 FetchContent_Declare(
@@ -64,19 +64,18 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(renamenoise)
 
-# WhisperCPP
+# sherpa-onnx
 FetchContent_Declare(
-    whispercpp
-    GIT_REPOSITORY https://github.com/ggml-org/whisper.cpp.git
+    sherpa_onnx
+    GIT_REPOSITORY https://github.com/k2-fsa/sherpa-onnx.git
     GIT_TAG master
 )
-FetchContent_MakeAvailable(whispercpp)
+FetchContent_MakeAvailable(sherpa_onnx)
 
 add_executable(${PROJECT_NAME}
     src/main.cpp
     src/analyzer.cpp
     src/audio.cpp
-    src/tts.cpp
 )
 
 target_link_libraries(
@@ -84,8 +83,13 @@ target_link_libraries(
     SDL3::SDL3
     miniaudio
     renamenoise
-    whisper
     imgui
+    sherpa-onnx-cxx-api
+    sherpa-onnx-c-api
 )
 
-target_include_directories(${PROJECT_NAME} PUBLIC ${imgui_SOURCE_DIR})
+target_compile_features(${PROJECT_NAME} PRIVATE cxx_std_23)
+target_include_directories(${PROJECT_NAME} PUBLIC
+    ${imgui_SOURCE_DIR}
+    ${sherpa_onnx_SOURCE_DIR}/sherpa-onnx/c-api
+)
