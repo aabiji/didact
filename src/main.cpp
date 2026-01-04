@@ -69,13 +69,10 @@ int main() {
     std::stop_source stopper;
 
     ModelPaths paths = {
-        .tokens = "../assets/sherpa-onnx-streaming-zipformer-en-2023-06-26/tokens.txt",
-        .encoder = "../assets/sherpa-onnx-streaming-zipformer-en-2023-06-26/"
-                   "encoder-epoch-99-avg-1-chunk-16-left-128.onnx",
-        .decoder = "../assets/sherpa-onnx-streaming-zipformer-en-2023-06-26/"
-                   "decoder-epoch-99-avg-1-chunk-16-left-128.onnx",
-        .joiner = "../assets/sherpa-onnx-streaming-zipformer-en-2023-06-26/"
-                  "joiner-epoch-99-avg-1-chunk-16-left-128.onnx",
+        "../assets/sherpa-onnx-streaming-zipformer-en-kroko-2025-08-06/tokens.txt",
+        "../assets/sherpa-onnx-streaming-zipformer-en-kroko-2025-08-06/encoder.onnx",
+        "../assets/sherpa-onnx-streaming-zipformer-en-kroko-2025-08-06/decoder.onnx",
+        "../assets/sherpa-onnx-streaming-zipformer-en-kroko-2025-08-06/joiner.onnx",
     };
     SpeechToText stt(paths, text_handler);
 

@@ -38,7 +38,7 @@ public:
     config.model_config.transducer.joiner = paths.joiner;
 
     config.max_active_paths = 4;
-    config.decoding_method = "greedy_search";
+    config.decoding_method = "modified_beam_search";
     config.feat_config.sample_rate = 16000;
     config.feat_config.feature_dim = 80;
 
