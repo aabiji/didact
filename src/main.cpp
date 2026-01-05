@@ -36,9 +36,15 @@ void data_callback(ma_device* stream, void* output, const void* input, u32 size)
   }
 }
 
-void text_handler(void* user_data, std::string text) {
+void text_handler(void* user_data, std::string text, bool endpoint) {
   CallbackData* d = (CallbackData*)user_data;
-  d->recognized_text.push_back(text);
+  int last = d->recognized_text.size() - 1;
+
+  if (text.size() > 0)
+    d->recognized_text[last] = text;
+
+  if (endpoint && d->recognized_text[last].size() > 0)
+    d->recognized_text.push_back("");
 }
 
 void draw_bars(SDL_Renderer* renderer, std::vector<float> bars, float window_width,
@@ -84,7 +90,7 @@ int main() {
 
     AudioStream stream("test.wav", true);
     SpectrumAnalyzer analyzer((int)stream.sample_rate());
-    CallbackData data = {&stream, &analyzer, &stt, {}, {}, stopper.get_token()};
+    CallbackData data = {&stream, &analyzer, &stt, {}, {""}, stopper.get_token()};
 
     stream.start(data_callback, &data);
     stream.enable_resampler(1, 16000);
@@ -172,7 +178,7 @@ int main() {
       for (int i = start; i < data.recognized_text.size(); i++) {
         float text_width = ImGui::CalcTextSize(data.recognized_text[i].c_str()).x;
         ImGui::SetCursorPosX((ImGui::GetWindowSize().x - text_width) * 0.5);
-        ImGui::Text(data.recognized_text[i].c_str());
+        ImGui::Text("%s", data.recognized_text[i].c_str());
       }
 
       ImGui::End();

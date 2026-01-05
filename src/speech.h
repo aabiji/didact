@@ -8,7 +8,7 @@
 #include <string>
 #include <thread>
 
-using TextHandler = std::function<void(void*, std::string)>;
+using TextHandler = std::function<void(void*, std::string, bool)>;
 
 struct ModelPaths {
   const char* tokens;
@@ -74,16 +74,15 @@ public:
 
       const SherpaOnnxOnlineRecognizerResult* r =
           SherpaOnnxGetOnlineStreamResult(m_recognizer, m_stream);
-      m_segment = std::string(r->text);
 
+      bool endpoint = false;
       if (SherpaOnnxOnlineStreamIsEndpoint(m_recognizer, m_stream)) {
         SherpaOnnxOnlineStreamReset(m_recognizer, m_stream);
-        if (m_segment.size() > 0) {
-          handler(user_data, m_segment);
-          m_segment = "";
-        }
+        endpoint = true;
+        m_segment = "";
       }
 
+      handler(user_data, std::string(r->text), endpoint);
       SherpaOnnxDestroyOnlineRecognizerResult(r);
     }
   }
