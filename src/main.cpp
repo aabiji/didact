@@ -17,7 +17,8 @@ struct CallbackData {
   AudioStream* stream;
   SpectrumAnalyzer* analyzer;
   SpeechToText* stt;
-  float_vec fft_bars;
+  std::vector<float> fft_bars;
+  std::vector<std::string> recognized_text;
   std::stop_token token;
 };
 
@@ -35,7 +36,10 @@ void data_callback(ma_device* stream, void* output, const void* input, u32 size)
   }
 }
 
-void text_handler(std::string text) { std::cout << text << "\n"; }
+void text_handler(void* user_data, std::string text) {
+  CallbackData* d = (CallbackData*)user_data;
+  d->recognized_text.push_back(text);
+}
 
 void draw_bars(SDL_Renderer* renderer, std::vector<float> bars, float window_width,
                float window_height) {
@@ -68,37 +72,58 @@ int main() {
   try {
     std::stop_source stopper;
 
+    // TODO: download these automatically if they aren't present
+    // (do the same for the Roboto font)
     ModelPaths paths = {
         "../assets/sherpa-onnx-streaming-zipformer-en-kroko-2025-08-06/tokens.txt",
         "../assets/sherpa-onnx-streaming-zipformer-en-kroko-2025-08-06/encoder.onnx",
         "../assets/sherpa-onnx-streaming-zipformer-en-kroko-2025-08-06/decoder.onnx",
         "../assets/sherpa-onnx-streaming-zipformer-en-kroko-2025-08-06/joiner.onnx",
     };
-    SpeechToText stt(paths, text_handler);
+    SpeechToText stt(paths);
 
     AudioStream stream("test.wav", true);
     SpectrumAnalyzer analyzer((int)stream.sample_rate());
-    CallbackData data = {&stream, &analyzer, &stt, {}, stopper.get_token()};
+    CallbackData data = {&stream, &analyzer, &stt, {}, {}, stopper.get_token()};
 
     stream.start(data_callback, &data);
     stream.enable_resampler(1, 16000);
-    std::thread thread([&] { stt.run_inference(stopper.get_token()); });
+    std::thread thread(
+        [&] { stt.run_inference(stopper.get_token(), text_handler, (void*)&data); });
 
     if (!SDL_Init(SDL_INIT_VIDEO))
       throw Error(SDL_GetError());
 
     int window_width = 900;
     int window_height = 700;
-    SDL_WindowFlags flags = SDL_WINDOW_RESIZABLE;
+    float main_scale = SDL_GetDisplayContentScale(SDL_GetPrimaryDisplay());
+    SDL_WindowFlags flags =
+        SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIDDEN | SDL_WINDOW_HIGH_PIXEL_DENSITY;
     window = SDL_CreateWindow("didact", window_width, window_height, flags);
     if (!window)
       throw Error(SDL_GetError());
+
     SDL_SetWindowPosition(window, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED);
+    SDL_ShowWindow(window);
 
     renderer = SDL_CreateRenderer(window, nullptr);
     if (!renderer)
       throw Error(SDL_GetError());
     SDL_SetRenderVSync(renderer, 1);
+
+    IMGUI_CHECKVERSION();
+    ImGui::CreateContext();
+    ImGuiIO& io = ImGui::GetIO();
+    io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
+    io.Fonts->AddFontFromFileTTF("../assets/Roboto-Regular.ttf");
+
+    ImGuiStyle& style = ImGui::GetStyle();
+    style.ScaleAllSizes(main_scale);
+    style.FontScaleDpi = main_scale;
+    style.FontSizeBase = 20.0f;
+
+    ImGui_ImplSDL3_InitForSDLRenderer(window, renderer);
+    ImGui_ImplSDLRenderer3_Init(renderer);
 
     SDL_Event event;
     bool running = true;
@@ -106,13 +131,55 @@ int main() {
 
     while (running) {
       while (SDL_PollEvent(&event)) {
-        switch (event.type) {
-        case SDL_EVENT_QUIT:
+        ImGui_ImplSDL3_ProcessEvent(&event);
+        bool done = event.type == SDL_EVENT_QUIT ||
+                    (event.type == SDL_EVENT_WINDOW_CLOSE_REQUESTED &&
+                     event.window.windowID == SDL_GetWindowID(window));
+        if (done) {
           running = false;
           break;
         }
+
+        if (event.type == SDL_EVENT_WINDOW_RESIZED) {
+          window_width = event.window.data1;
+          window_height = event.window.data2;
+        }
       }
 
+      ImGui_ImplSDLRenderer3_NewFrame();
+      ImGui_ImplSDL3_NewFrame();
+      ImGui::NewFrame();
+
+      ImGuiWindowFlags window_flags = 0;
+      window_flags |= ImGuiWindowFlags_NoBackground;
+      window_flags |= ImGuiWindowFlags_NoTitleBar;
+      window_flags |= ImGuiWindowFlags_NoMove;
+      window_flags |= ImGuiWindowFlags_NoResize;
+      window_flags |= ImGuiWindowFlags_NoCollapse;
+
+      // Fix the window at the bottom
+      ImGuiViewport* viewport = ImGui::GetMainViewport();
+      float width = viewport->WorkSize.x, height = 175;
+      ImVec2 pos = ImVec2(viewport->WorkPos.x,
+                          viewport->WorkPos.y + viewport->WorkSize.y - height);
+      ImGui::SetNextWindowPos(pos, ImGuiCond_Always);
+      ImGui::SetNextWindowSize(ImVec2(width, height), ImGuiCond_Always);
+
+      bool window_open = true;
+      ImGui::Begin("UI", &window_open, window_flags);
+
+      int start = std::max(0, (int)(data.recognized_text.size() - 6));
+      for (int i = start; i < data.recognized_text.size(); i++) {
+        float text_width = ImGui::CalcTextSize(data.recognized_text[i].c_str()).x;
+        ImGui::SetCursorPosX((ImGui::GetWindowSize().x - text_width) * 0.5);
+        ImGui::Text(data.recognized_text[i].c_str());
+      }
+
+      ImGui::End();
+      ImGui::Render();
+
+      SDL_SetRenderScale(renderer, io.DisplayFramebufferScale.x,
+                         io.DisplayFramebufferScale.y);
       SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
       SDL_RenderClear(renderer);
 
@@ -126,6 +193,7 @@ int main() {
       }
       prev_bars = data.fft_bars;
 
+      ImGui_ImplSDLRenderer3_RenderDrawData(ImGui::GetDrawData(), renderer);
       SDL_RenderPresent(renderer);
     }
 
@@ -142,6 +210,10 @@ int main() {
     SDL_Log(error.what(), "\n");
     return -1;
   }
+
+  ImGui_ImplSDLRenderer3_Shutdown();
+  ImGui_ImplSDL3_Shutdown();
+  ImGui::DestroyContext();
 
   SDL_DestroyRenderer(renderer);
   SDL_DestroyWindow(window);

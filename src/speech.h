@@ -8,7 +8,7 @@
 #include <string>
 #include <thread>
 
-using TextHandler = std::function<void(std::string)>;
+using TextHandler = std::function<void(void*, std::string)>;
 
 struct ModelPaths {
   const char* tokens;
@@ -25,10 +25,10 @@ public:
     SherpaOnnxDestroyOnlineRecognizer(m_recognizer);
   }
 
-  SpeechToText(ModelPaths paths, TextHandler handler) {
+  SpeechToText(ModelPaths paths) {
     SherpaOnnxOnlineRecognizerConfig config = {0};
 
-    config.model_config.debug = 1;
+    config.model_config.debug = 0;
     config.model_config.num_threads =
         std::min(2, (int)std::thread::hardware_concurrency());
     config.model_config.provider = "cpu";
@@ -49,7 +49,6 @@ public:
 
     m_recognizer = SherpaOnnxCreateOnlineRecognizer(&config);
     m_stream = SherpaOnnxCreateOnlineStream(m_recognizer);
-    m_handler = handler;
     m_segment = "";
   }
 
@@ -62,7 +61,7 @@ public:
     m_have_enough_data.notify_one();
   }
 
-  void run_inference(std::stop_token token) {
+  void run_inference(std::stop_token token, TextHandler handler, void* user_data) {
     while (!token.stop_requested()) {
       // Wait until there's enough samples to run inference on
       std::unique_lock<std::mutex> guard(m_mutex);
@@ -80,7 +79,7 @@ public:
       if (SherpaOnnxOnlineStreamIsEndpoint(m_recognizer, m_stream)) {
         SherpaOnnxOnlineStreamReset(m_recognizer, m_stream);
         if (m_segment.size() > 0) {
-          m_handler(m_segment);
+          handler(user_data, m_segment);
           m_segment = "";
         }
       }
@@ -91,7 +90,6 @@ public:
 
 private:
   std::string m_segment;
-  TextHandler m_handler;
   std::mutex m_mutex;
   std::condition_variable_any m_have_enough_data;
 
