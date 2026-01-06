@@ -18,7 +18,6 @@ struct CallbackData {
   SpectrumAnalyzer* analyzer;
   SpeechToText* stt;
   std::vector<float> fft_bars;
-  std::vector<std::string> recognized_text;
   std::stop_token token;
 };
 
@@ -36,38 +35,67 @@ void data_callback(ma_device* stream, void* output, const void* input, u32 size)
   }
 }
 
-void text_handler(void* user_data, std::string text, bool endpoint) {
-  CallbackData* d = (CallbackData*)user_data;
-  int last = d->recognized_text.size() - 1;
-
-  if (text.size() > 0)
-    d->recognized_text[last] = text;
-
-  if (endpoint && d->recognized_text[last].size() > 0)
-    d->recognized_text.push_back("");
-}
-
-void draw_bars(SDL_Renderer* renderer, std::vector<float> bars, float window_width,
-               float window_height) {
+void draw_bars(SDL_Renderer* renderer, SDL_FRect bar_rect, std::vector<float> bars) {
   int num_bars = (int)bars.size();
   float min = *(std::min_element(bars.begin(), bars.end()));
   float max = *(std::max_element(bars.begin(), bars.end()));
-
-  float bar_width = 5, bar_height = 100;
-  float start_x = window_width / 2.0f;
 
   for (int i = -(num_bars - 1); i < num_bars; i++) {
     float value = bars[(size_t)abs(i)];
     float value_percent = (value - min) / (max - min);
 
     SDL_FRect rect;
-    rect.w = bar_width;
-    rect.h = value_percent * bar_height;
-    rect.x = start_x + 2 * ((float)i * rect.w);
-    rect.y = window_height / 2.0f - rect.h / 2.0f;
+    rect.w = bar_rect.w;
+    rect.h = value_percent * bar_rect.y;
+    rect.x = bar_rect.x + 2 * ((float)i * rect.w);
+    rect.y = bar_rect.y - rect.h / 2.0f;
 
     SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);
     SDL_RenderFillRect(renderer, &rect);
+  }
+}
+
+struct Transcript {
+  std::string current_line;
+  std::string text;
+
+  void save_to_clipboard() {
+    // TODO: why does copying this text take so long??
+    std::string total_text = text + "\n" + current_line;
+    if (!SDL_SetClipboardText(total_text.c_str()))
+      throw Error(SDL_GetError());
+  }
+};
+
+int text_input_callback(ImGuiInputTextCallbackData* data) {
+  Transcript* t = (Transcript*)data->UserData;
+  if (data->EventFlag == ImGuiInputTextFlags_CallbackResize) {
+    t->text.resize(data->BufTextLen);
+    data->Buf = t->text.data();
+  }
+
+  // Sync ImGui's internal state with our own
+  // TODO: improve
+  bool out_of_sync = strcmp(data->Buf, t->text.data()) != 0;
+  if (data->EventFlag == ImGuiInputTextFlags_CallbackAlways && out_of_sync &&
+      !ImGui::IsAnyItemActive()) {
+    data->DeleteChars(0, data->BufTextLen);
+    data->InsertChars(0, t->text.data(), t->text.data() + t->text.size());
+    data->CursorPos = data->BufTextLen;
+  }
+
+  return 0;
+}
+
+void text_handler(void* user_data, std::string text, bool endpoint) {
+  if (text.size() == 0)
+    return;
+
+  Transcript* t = (Transcript*)user_data;
+  t->current_line = text;
+  if (endpoint) {
+    t->text += t->current_line + "\n";
+    t->current_line = "";
   }
 }
 
@@ -87,15 +115,17 @@ int main() {
         "../assets/sherpa-onnx-streaming-zipformer-en-kroko-2025-08-06/joiner.onnx",
     };
     SpeechToText stt(paths);
+    Transcript transcript;
 
     AudioStream stream("test.wav", true);
     SpectrumAnalyzer analyzer((int)stream.sample_rate());
-    CallbackData data = {&stream, &analyzer, &stt, {}, {""}, stopper.get_token()};
+    CallbackData data = {&stream, &analyzer, &stt, {}, stopper.get_token()};
 
     stream.start(data_callback, &data);
     stream.enable_resampler(1, 16000);
-    std::thread thread(
-        [&] { stt.run_inference(stopper.get_token(), text_handler, (void*)&data); });
+    std::thread thread([&] {
+      stt.run_inference(stopper.get_token(), text_handler, (void*)&transcript);
+    });
 
     if (!SDL_Init(SDL_INIT_VIDEO))
       throw Error(SDL_GetError());
@@ -135,6 +165,9 @@ int main() {
     bool running = true;
     float_vec prev_bars;
 
+    SDL_FRect bar_rect = {.x = (float)window_width / 2.0f, .y = 50, .w = 5, .h = 100};
+    int ui_offset_y = bar_rect.y + 25;
+
     while (running) {
       while (SDL_PollEvent(&event)) {
         ImGui_ImplSDL3_ProcessEvent(&event);
@@ -163,23 +196,28 @@ int main() {
       window_flags |= ImGuiWindowFlags_NoResize;
       window_flags |= ImGuiWindowFlags_NoCollapse;
 
-      // Fix the window at the bottom
+      // Position the ui window
       ImGuiViewport* viewport = ImGui::GetMainViewport();
-      float width = viewport->WorkSize.x, height = 175;
-      ImVec2 pos = ImVec2(viewport->WorkPos.x,
-                          viewport->WorkPos.y + viewport->WorkSize.y - height);
+      ImVec2 pos = ImVec2(0, ui_offset_y);
+      ImVec2 size = ImVec2(window_width, window_height - ui_offset_y);
       ImGui::SetNextWindowPos(pos, ImGuiCond_Always);
-      ImGui::SetNextWindowSize(ImVec2(width, height), ImGuiCond_Always);
+      ImGui::SetNextWindowSize(size, ImGuiCond_Always);
 
       bool window_open = true;
       ImGui::Begin("UI", &window_open, window_flags);
 
-      int start = std::max(0, (int)(data.recognized_text.size() - 6));
-      for (int i = start; i < data.recognized_text.size(); i++) {
-        float text_width = ImGui::CalcTextSize(data.recognized_text[i].c_str()).x;
-        ImGui::SetCursorPosX((ImGui::GetWindowSize().x - text_width) * 0.5);
-        ImGui::Text("%s", data.recognized_text[i].c_str());
-      }
+      if (ImGui::Button("Copy"))
+        transcript.save_to_clipboard();
+
+      ImVec2 widget_size = ImVec2(window_width, window_height - ui_offset_y - 100);
+      ImGuiInputTextFlags input_flags =
+          ImGuiInputTextFlags_WordWrap | ImGuiInputTextFlags_NoUndoRedo |
+          ImGuiInputTextFlags_AllowTabInput | ImGuiInputTextFlags_CallbackAlways |
+          ImGuiInputTextFlags_CallbackResize;
+      ImGui::InputTextMultiline("Transcript", transcript.text.data(),
+                                (size_t)transcript.text.capacity(), widget_size,
+                                input_flags, text_input_callback, (void*)&transcript);
+      ImGui::Text("%s", transcript.current_line.c_str());
 
       ImGui::End();
       ImGui::Render();
@@ -195,7 +233,7 @@ int main() {
         for (size_t i = 0; i < bars.size(); i++) {
           bars[i] = std::max(data.fft_bars[i], prev_bars[i] * 0.85f);
         }
-        draw_bars(renderer, bars, (float)window_width, (float)window_height);
+        draw_bars(renderer, bar_rect, bars);
       }
       prev_bars = data.fft_bars;
 

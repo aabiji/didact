@@ -1,14 +1,21 @@
 # Didact
 
+```sh
+cmake -S . -B build -G Ninja -D CMAKE_BUILD_TYPE=Debug -D CMAKE_LINKER_TYPE=MOLD
+```
+
+Today:
+- Allow the user to edit past lines
+- Option to save the recording
+  - Save the text file and the audio file to a default user folder
+- Make the text input have a border and remove its background
+- Make the buttons have icons instead of text
+- Add a back buttonA
+- Sketch some UI ideas for the note editor
+- Make the text font bigger
+
 A simple notes app
 
-<video src='video.mp4' width=180/>
-
-Some ideas:
-- whispercpp integration to get rela time speech to text (voice input)
-  - Real time translation to english or the target language
-- Spawn a desktop and android daemon to be able to start note taking using a code word (kind of like siri)
-  (open a temporary note -> make it easy to copy/paste so it can be used for dictation as well)
-- Save audio recordings/notes to disk
 - Same ethos as obsidian where you're in charge of your files
 - Minimailist ui (black background, clean white text in a large font)
+- Big idea: Samsung Notes clone that's open source, cross platform and fast, with voice dicdation

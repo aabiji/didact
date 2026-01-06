@@ -5,6 +5,8 @@ include(FetchContent)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(BUILD_SHARED_LIBS ON CACHE BOOL "Build shared libraries" FORCE)
+set(CMAKE_EXE_LINKER_FLAGS "-fuse-ld=mold")
+set(CMAKE_SHARED_LINKER_FLAGS "-fuse-ld=mold")
 
 # SDL3
 FetchContent_Declare(
