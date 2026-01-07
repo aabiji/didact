@@ -10,12 +10,11 @@
 
 void draw_bars(SDL_Renderer* renderer, SDL_FRect bar_rect, std::vector<float> bars) {
   int num_bars = (int)bars.size();
-  float min = *(std::min_element(bars.begin(), bars.end()));
-  float max = *(std::max_element(bars.begin(), bars.end()));
+  auto [min, max] = std::minmax_element(bars.begin(), bars.end());
 
   for (int i = -(num_bars - 1); i < num_bars; i++) {
     float value = bars[(size_t)abs(i)];
-    float value_percent = (value - min) / (max - min);
+    float value_percent = (value - *min) / (*max - *min);
 
     SDL_FRect rect;
     rect.w = bar_rect.w;
@@ -75,11 +74,11 @@ int main() {
     SDL_SetTextureColorMod(tex, 255, 0, 0); // assuming that the original svg is white
     SDL_DestroySurface(surf);
     SDL_FRect icon_rect = {.x = 0, .y = 0, .w = (float)icon_size, .h = (float)icon_size};
-    //SDL_DestroyTexture(tex);
 
+    TTF_Init();
     TTF_Font* font = TTF_OpenFont("../assets/Roboto-Regular.ttf", 25);
     if (font == nullptr)
-      throw Error("Failed to open the font");
+      throw Error(SDL_GetError());
     const char* text = "hello :)";
     SDL_Color text_color = {255, 255, 255, 255};
     SDL_Surface* text_surf = TTF_RenderText_Solid(font, text, 8, text_color);
@@ -87,7 +86,6 @@ int main() {
     SDL_FRect text_rect = {
         .x = 0, .y = 500, .w = (float)text_surf->w, .h = (float)text_surf->h};
     SDL_DestroySurface(text_surf);
-    //SDL_DestroyTexture(text_tex);
 
     SDL_Event event;
     bool running = true;
@@ -133,6 +131,9 @@ int main() {
     }
 
     transcript.stop();
+
+    SDL_DestroyTexture(tex);
+    SDL_DestroyTexture(text_tex);
   } catch (const std::runtime_error& error) {
     SDL_Log(error.what(), "\n");
     return -1;

@@ -1,5 +1,10 @@
 #include "transcriber/transcriber.h"
 
+Transcription::~Transcription() {
+  if (m_thread.joinable())
+    stop();
+}
+
 void Transcription::init(ModelPaths paths, const char* audio_path, bool capture) {
   m_stt.init(paths);
   m_stream.init(audio_path, capture);
@@ -22,23 +27,23 @@ void Transcription::start() {
   std::stop_token token = m_stopper.get_token();
   m_stream.start(audio_callback, this);
   m_stream.enable_resampler(1, 16000);
-  m_thread = std::thread([&] { m_stt.run_inference(token, speech_callback, this); });
+  m_thread = std::thread([this, token, speech_callback] {
+    m_stt.run_inference(token, speech_callback, this);
+  });
 }
 
 void Transcription::stop() {
+  m_stopper.request_stop();
+  m_thread.join();
+
   // Flush any remaining audio frames in the denoiser's queue
   while (m_stream.have_chunk(true)) {
     auto samples = m_stream.get_chunk();
     m_stream.write_samples(samples.data(), (u32)samples.size());
   }
-
-  m_stopper.request_stop();
-  m_thread.join();
 }
 
 void Transcription::handle_audio(void* output, const void* input, u32 size) {
-  std::lock_guard<std::mutex> guard(m_fft_mutex);
-
   m_stream.queue_samples(input, output, size);
   auto token = m_stopper.get_token();
 
@@ -53,8 +58,6 @@ void Transcription::handle_audio(void* output, const void* input, u32 size) {
 }
 
 void Transcription::handle_speech(std::string text, bool endpoint) {
-  std::lock_guard<std::mutex> guard(m_txt_mutex);
-
   m_current_line = text;
   if (endpoint) {
     m_lines.push_back(m_current_line);
@@ -62,24 +65,12 @@ void Transcription::handle_speech(std::string text, bool endpoint) {
   }
 }
 
+std::vector<float>& Transcription::get_visualization_data() { return m_fft_bars; }
+
 std::string Transcription::get_text() {
-  std::lock_guard<std::mutex> guard(m_txt_mutex);
-
-  int total_length = 0;
-  std::string seperator = "\n";
-  for (auto line : m_lines)
-    total_length += line.length();
-  total_length += (m_lines.size() - 1) * seperator.length();
-
-  std::string text;
-  text.reserve(total_length);
-  for (auto line : m_lines)
-    text += line + seperator;
-
+  std::string text = "";
+  for (const auto& line : m_lines)
+    text += line + "\n";
+  text += m_current_line;
   return text;
-}
-
-std::vector<float> Transcription::get_visualization_data() {
-  std::lock_guard<std::mutex> guard(m_fft_mutex);
-  return m_fft_bars;
 }

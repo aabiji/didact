@@ -6,6 +6,8 @@
 
 class Transcription {
 public:
+  ~Transcription();
+
   void init(ModelPaths paths, const char* audio_path, bool capture);
   void start();
   void stop();
@@ -14,14 +16,11 @@ public:
   void handle_speech(std::string text, bool endpoint);
 
   std::string get_text();
-  std::vector<float> get_visualization_data();
+  std::vector<float>& get_visualization_data();
 
 private:
   std::string m_current_line;
   std::vector<std::string> m_lines;
-  std::mutex m_txt_mutex;
-
-  std::mutex m_fft_mutex;
   std::vector<float> m_fft_bars;
 
   std::thread m_thread;

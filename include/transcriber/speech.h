@@ -20,9 +20,12 @@ struct ModelPaths {
 class SpeechToText {
 public:
   ~SpeechToText() {
-    SherpaOnnxOnlineStreamInputFinished(m_stream);
-    SherpaOnnxDestroyOnlineStream(m_stream);
-    SherpaOnnxDestroyOnlineRecognizer(m_recognizer);
+    if (m_stream) {
+      SherpaOnnxOnlineStreamInputFinished(m_stream);
+      SherpaOnnxDestroyOnlineStream(m_stream);
+    }
+    if (m_recognizer)
+      SherpaOnnxDestroyOnlineRecognizer(m_recognizer);
   }
 
   void init(ModelPaths paths) {
@@ -49,7 +52,6 @@ public:
 
     m_recognizer = SherpaOnnxCreateOnlineRecognizer(&config);
     m_stream = SherpaOnnxCreateOnlineStream(m_recognizer);
-    m_segment = "";
   }
 
   // NOTE: The samples must be normalized to a range of [-1, 1]
@@ -79,7 +81,6 @@ public:
       if (SherpaOnnxOnlineStreamIsEndpoint(m_recognizer, m_stream)) {
         SherpaOnnxOnlineStreamReset(m_recognizer, m_stream);
         endpoint = true;
-        m_segment = "";
       }
 
       handler(user_data, std::string(r->text), endpoint);
@@ -88,7 +89,6 @@ public:
   }
 
 private:
-  std::string m_segment;
   std::mutex m_mutex;
   std::condition_variable_any m_have_enough_data;
 
