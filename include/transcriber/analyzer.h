@@ -7,7 +7,7 @@ using float_vec = std::vector<float>;
 
 class SpectrumAnalyzer {
 public:
-  SpectrumAnalyzer(int sample_rate);
+  void init(int sample_rate);
 
   float_vec process(int16_t* samples, size_t length);
 

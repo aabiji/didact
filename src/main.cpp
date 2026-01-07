@@ -1,39 +1,12 @@
 #include <algorithm>
-#include <iostream>
 
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_main.h>
+#include <SDL3_image/SDL_image.h>
+#include <SDL3_ttf/SDL_ttf.h>
 
-#include <backends/imgui_impl_sdl3.h>
-#include <backends/imgui_impl_sdlrenderer3.h>
-#include <imgui.h>
-
-#include "analyzer.h"
-#include "audio.h"
 #include "error.h"
-#include "speech.h"
-
-struct CallbackData {
-  AudioStream* stream;
-  SpectrumAnalyzer* analyzer;
-  SpeechToText* stt;
-  std::vector<float> fft_bars;
-  std::stop_token token;
-};
-
-void data_callback(ma_device* stream, void* output, const void* input, u32 size) {
-  CallbackData* d = (CallbackData*)stream->pUserData;
-  d->stream->queue_samples(input, output, size);
-
-  while (d->stream->have_chunk(false) && !d->token.stop_requested()) {
-    auto samples = d->stream->get_chunk();
-    d->fft_bars = d->analyzer->process(samples.data(), (int)samples.size());
-    d->stream->write_samples(samples.data(), (u32)samples.size());
-
-    auto resampled = d->stream->resample(samples.data(), samples.size());
-    d->stt->process(resampled.data(), resampled.size());
-  }
-}
+#include "transcriber/transcriber.h"
 
 void draw_bars(SDL_Renderer* renderer, SDL_FRect bar_rect, std::vector<float> bars) {
   int num_bars = (int)bars.size();
@@ -55,57 +28,11 @@ void draw_bars(SDL_Renderer* renderer, SDL_FRect bar_rect, std::vector<float> ba
   }
 }
 
-struct Transcript {
-  std::string current_line;
-  std::string text;
-
-  void save_to_clipboard() {
-    // TODO: why does copying this text take so long??
-    std::string total_text = text + "\n" + current_line;
-    if (!SDL_SetClipboardText(total_text.c_str()))
-      throw Error(SDL_GetError());
-  }
-};
-
-int text_input_callback(ImGuiInputTextCallbackData* data) {
-  Transcript* t = (Transcript*)data->UserData;
-  if (data->EventFlag == ImGuiInputTextFlags_CallbackResize) {
-    t->text.resize(data->BufTextLen);
-    data->Buf = t->text.data();
-  }
-
-  // Sync ImGui's internal state with our own
-  // TODO: improve
-  bool out_of_sync = strcmp(data->Buf, t->text.data()) != 0;
-  if (data->EventFlag == ImGuiInputTextFlags_CallbackAlways && out_of_sync &&
-      !ImGui::IsAnyItemActive()) {
-    data->DeleteChars(0, data->BufTextLen);
-    data->InsertChars(0, t->text.data(), t->text.data() + t->text.size());
-    data->CursorPos = data->BufTextLen;
-  }
-
-  return 0;
-}
-
-void text_handler(void* user_data, std::string text, bool endpoint) {
-  if (text.size() == 0)
-    return;
-
-  Transcript* t = (Transcript*)user_data;
-  t->current_line = text;
-  if (endpoint) {
-    t->text += t->current_line + "\n";
-    t->current_line = "";
-  }
-}
-
 int main() {
   SDL_Window* window = nullptr;
   SDL_Renderer* renderer = nullptr;
 
   try {
-    std::stop_source stopper;
-
     // TODO: download these automatically if they aren't present
     // (do the same for the Roboto font)
     ModelPaths paths = {
@@ -114,18 +41,9 @@ int main() {
         "../assets/sherpa-onnx-streaming-zipformer-en-kroko-2025-08-06/decoder.onnx",
         "../assets/sherpa-onnx-streaming-zipformer-en-kroko-2025-08-06/joiner.onnx",
     };
-    SpeechToText stt(paths);
-    Transcript transcript;
-
-    AudioStream stream("test.wav", true);
-    SpectrumAnalyzer analyzer((int)stream.sample_rate());
-    CallbackData data = {&stream, &analyzer, &stt, {}, stopper.get_token()};
-
-    stream.start(data_callback, &data);
-    stream.enable_resampler(1, 16000);
-    std::thread thread([&] {
-      stt.run_inference(stopper.get_token(), text_handler, (void*)&transcript);
-    });
+    Transcription transcript;
+    transcript.init(paths, "test.wav", true);
+    transcript.start();
 
     if (!SDL_Init(SDL_INIT_VIDEO))
       throw Error(SDL_GetError());
@@ -147,19 +65,29 @@ int main() {
       throw Error(SDL_GetError());
     SDL_SetRenderVSync(renderer, 1);
 
-    IMGUI_CHECKVERSION();
-    ImGui::CreateContext();
-    ImGuiIO& io = ImGui::GetIO();
-    io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
-    io.Fonts->AddFontFromFileTTF("../assets/Roboto-Regular.ttf");
+    int icon_size = 64;
+    const char* icon_path = "../assets/icons/copy.svg";
+    SDL_IOStream* ops = SDL_IOFromFile(icon_path, "rb");
+    if (!ops)
+      throw Error("Failed to load {}", icon_path);
+    SDL_Surface* surf = IMG_LoadSizedSVG_IO(ops, icon_size, icon_size);
+    SDL_Texture* tex = SDL_CreateTextureFromSurface(renderer, surf);
+    SDL_SetTextureColorMod(tex, 255, 0, 0); // assuming that the original svg is white
+    SDL_DestroySurface(surf);
+    SDL_FRect icon_rect = {.x = 0, .y = 0, .w = (float)icon_size, .h = (float)icon_size};
+    //SDL_DestroyTexture(tex);
 
-    ImGuiStyle& style = ImGui::GetStyle();
-    style.ScaleAllSizes(main_scale);
-    style.FontScaleDpi = main_scale;
-    style.FontSizeBase = 20.0f;
-
-    ImGui_ImplSDL3_InitForSDLRenderer(window, renderer);
-    ImGui_ImplSDLRenderer3_Init(renderer);
+    TTF_Font* font = TTF_OpenFont("../assets/Roboto-Regular.ttf", 25);
+    if (font == nullptr)
+      throw Error("Failed to open the font");
+    const char* text = "hello :)";
+    SDL_Color text_color = {255, 255, 255, 255};
+    SDL_Surface* text_surf = TTF_RenderText_Solid(font, text, 8, text_color);
+    SDL_Texture* text_tex = SDL_CreateTextureFromSurface(renderer, text_surf);
+    SDL_FRect text_rect = {
+        .x = 0, .y = 500, .w = (float)text_surf->w, .h = (float)text_surf->h};
+    SDL_DestroySurface(text_surf);
+    //SDL_DestroyTexture(text_tex);
 
     SDL_Event event;
     bool running = true;
@@ -170,7 +98,6 @@ int main() {
 
     while (running) {
       while (SDL_PollEvent(&event)) {
-        ImGui_ImplSDL3_ProcessEvent(&event);
         bool done = event.type == SDL_EVENT_QUIT ||
                     (event.type == SDL_EVENT_WINDOW_CLOSE_REQUESTED &&
                      event.window.windowID == SDL_GetWindowID(window));
@@ -185,79 +112,31 @@ int main() {
         }
       }
 
-      ImGui_ImplSDLRenderer3_NewFrame();
-      ImGui_ImplSDL3_NewFrame();
-      ImGui::NewFrame();
-
-      ImGuiWindowFlags window_flags = 0;
-      window_flags |= ImGuiWindowFlags_NoBackground;
-      window_flags |= ImGuiWindowFlags_NoTitleBar;
-      window_flags |= ImGuiWindowFlags_NoMove;
-      window_flags |= ImGuiWindowFlags_NoResize;
-      window_flags |= ImGuiWindowFlags_NoCollapse;
-
-      // Position the ui window
-      ImGuiViewport* viewport = ImGui::GetMainViewport();
-      ImVec2 pos = ImVec2(0, ui_offset_y);
-      ImVec2 size = ImVec2(window_width, window_height - ui_offset_y);
-      ImGui::SetNextWindowPos(pos, ImGuiCond_Always);
-      ImGui::SetNextWindowSize(size, ImGuiCond_Always);
-
-      bool window_open = true;
-      ImGui::Begin("UI", &window_open, window_flags);
-
-      if (ImGui::Button("Copy"))
-        transcript.save_to_clipboard();
-
-      ImVec2 widget_size = ImVec2(window_width, window_height - ui_offset_y - 100);
-      ImGuiInputTextFlags input_flags =
-          ImGuiInputTextFlags_WordWrap | ImGuiInputTextFlags_NoUndoRedo |
-          ImGuiInputTextFlags_AllowTabInput | ImGuiInputTextFlags_CallbackAlways |
-          ImGuiInputTextFlags_CallbackResize;
-      ImGui::InputTextMultiline("Transcript", transcript.text.data(),
-                                (size_t)transcript.text.capacity(), widget_size,
-                                input_flags, text_input_callback, (void*)&transcript);
-      ImGui::Text("%s", transcript.current_line.c_str());
-
-      ImGui::End();
-      ImGui::Render();
-
-      SDL_SetRenderScale(renderer, io.DisplayFramebufferScale.x,
-                         io.DisplayFramebufferScale.y);
       SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
       SDL_RenderClear(renderer);
 
-      if (data.fft_bars.size() > 0 && prev_bars.size() > 0) {
+      SDL_RenderTexture(renderer, tex, nullptr, &icon_rect);
+      SDL_RenderTexture(renderer, text_tex, nullptr, &text_rect);
+
+      auto fft_bars = transcript.get_visualization_data();
+      if (fft_bars.size() > 0 && prev_bars.size() > 0) {
         // Peek decay between frames (rise sharply then fall slowly)
-        float_vec bars(data.fft_bars.size());
+        float_vec bars(fft_bars.size());
         for (size_t i = 0; i < bars.size(); i++) {
-          bars[i] = std::max(data.fft_bars[i], prev_bars[i] * 0.85f);
+          bars[i] = std::max(fft_bars[i], prev_bars[i] * 0.85f);
         }
         draw_bars(renderer, bar_rect, bars);
       }
-      prev_bars = data.fft_bars;
+      prev_bars = fft_bars;
 
-      ImGui_ImplSDLRenderer3_RenderDrawData(ImGui::GetDrawData(), renderer);
       SDL_RenderPresent(renderer);
     }
 
-    // Flush any remaining audio frames in the denoiser's queue
-    while (stream.have_chunk(true)) {
-      auto samples = stream.get_chunk();
-      stream.write_samples(samples.data(), (u32)samples.size());
-    }
-
-    stopper.request_stop();
-    thread.join();
-
+    transcript.stop();
   } catch (const std::runtime_error& error) {
     SDL_Log(error.what(), "\n");
     return -1;
   }
-
-  ImGui_ImplSDLRenderer3_Shutdown();
-  ImGui_ImplSDL3_Shutdown();
-  ImGui::DestroyContext();
 
   SDL_DestroyRenderer(renderer);
   SDL_DestroyWindow(window);

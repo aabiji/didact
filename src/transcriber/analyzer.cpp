@@ -1,7 +1,7 @@
 #include <algorithm>
 #include <complex>
 
-#include "analyzer.h"
+#include "transcriber/analyzer.h"
 
 using complex = std::complex<float>;
 using cdata = std::vector<complex>;
@@ -61,7 +61,7 @@ cdata fft(cdata data, bool inverse) {
   return points;
 }
 
-SpectrumAnalyzer::SpectrumAnalyzer(int sample_rate) {
+void SpectrumAnalyzer::init(int sample_rate) {
   m_num_bars = 32;
   m_sample_rate = sample_rate;
   m_write_offset = 0;

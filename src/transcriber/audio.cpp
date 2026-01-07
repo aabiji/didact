@@ -1,6 +1,6 @@
 #define MINIAUDIO_IMPLEMENTATION
 
-#include "audio.h"
+#include "transcriber/audio.h"
 #include "error.h"
 
 AudioStream::~AudioStream() {
@@ -20,7 +20,7 @@ AudioStream::~AudioStream() {
   renamenoise_destroy(m_denoiser);
 }
 
-AudioStream::AudioStream(const char* path, bool is_capture) {
+void AudioStream::init(const char* path, bool is_capture) {
   m_is_capture = is_capture;
   m_started = false;
   m_resampling = false;

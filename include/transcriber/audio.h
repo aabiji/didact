@@ -13,7 +13,7 @@ public:
   ~AudioStream();
 
   // Either stream audio from a file, or capture audio from the microphone
-  AudioStream(const char* path, bool is_capture);
+  void init(const char* path, bool is_capture);
 
   void start(ma_device_data_proc callback, void* user_data);
   u32 sample_rate();

@@ -25,7 +25,7 @@ public:
     SherpaOnnxDestroyOnlineRecognizer(m_recognizer);
   }
 
-  SpeechToText(ModelPaths paths) {
+  void init(ModelPaths paths) {
     SherpaOnnxOnlineRecognizerConfig config = {0};
 
     config.model_config.debug = 0;

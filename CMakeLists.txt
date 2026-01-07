@@ -8,7 +8,7 @@ set(BUILD_SHARED_LIBS ON CACHE BOOL "Build shared libraries" FORCE)
 set(CMAKE_EXE_LINKER_FLAGS "-fuse-ld=mold")
 set(CMAKE_SHARED_LINKER_FLAGS "-fuse-ld=mold")
 
-# SDL3
+# SDL3 + SDL_Image + SDL_TTF
 FetchContent_Declare(
     sdl3
     GIT_REPOSITORY https://github.com/libsdl-org/SDL.git
@@ -17,38 +17,21 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(sdl3)
 
-# Imgui
 FetchContent_Declare(
-    imgui
-    GIT_REPOSITORY "https://github.com/ocornut/imgui.git"
-    GIT_TAG master
+    sdl_image
+    GIT_REPOSITORY https://github.com/libsdl-org/SDL_image
+    GIT_TAG main
+    FIND_PACKAGE_ARGS
 )
-FetchContent_GetProperties(imgui)
+FetchContent_MakeAvailable(sdl_image)
 
-if(NOT imgui_POPULATED)
-    FetchContent_Populate(imgui)
-endif()
-
-add_library(imgui
-    ${imgui_SOURCE_DIR}/imgui.cpp
-    ${imgui_SOURCE_DIR}/imgui.h
-    ${imgui_SOURCE_DIR}/imconfig.h
-    ${imgui_SOURCE_DIR}/imgui_demo.cpp
-    ${imgui_SOURCE_DIR}/imgui_draw.cpp
-    ${imgui_SOURCE_DIR}/imgui_internal.h
-    ${imgui_SOURCE_DIR}/imgui_tables.cpp
-    ${imgui_SOURCE_DIR}/imgui_widgets.cpp
-    ${imgui_SOURCE_DIR}/imstb_rectpack.h
-    ${imgui_SOURCE_DIR}/imstb_textedit.h
-    ${imgui_SOURCE_DIR}/imstb_truetype.h
-    ${imgui_SOURCE_DIR}/backends/imgui_impl_sdl3.h
-    ${imgui_SOURCE_DIR}/backends/imgui_impl_sdl3.cpp
-    ${imgui_SOURCE_DIR}/backends/imgui_impl_sdlrenderer3.h
-    ${imgui_SOURCE_DIR}/backends/imgui_impl_sdlrenderer3.cpp
+FetchContent_Declare(
+    sdl_ttf
+    GIT_REPOSITORY https://github.com/libsdl-org/SDL_ttf
+    GIT_TAG main
+    FIND_PACKAGE_ARGS
 )
-target_link_libraries(imgui SDL3::SDL3)
-target_include_directories(imgui PUBLIC ${imgui_SOURCE_DIR})
-FetchContent_MakeAvailable(imgui)
+FetchContent_MakeAvailable(sdl_ttf)
 
 # miniaudio
 FetchContent_Declare(
@@ -76,22 +59,24 @@ FetchContent_MakeAvailable(sherpa_onnx)
 
 add_executable(${PROJECT_NAME}
     src/main.cpp
-    src/analyzer.cpp
-    src/audio.cpp
+    src/transcriber/analyzer.cpp
+    src/transcriber/audio.cpp
+    src/transcriber/transcriber.cpp
 )
 
 target_link_libraries(
     ${PROJECT_NAME}
     SDL3::SDL3
     miniaudio
+    SDL3_image::SDL3_image
+    SDL3_ttf::SDL3_ttf
     renamenoise
-    imgui
     sherpa-onnx-cxx-api
     sherpa-onnx-c-api
 )
 
 target_compile_features(${PROJECT_NAME} PRIVATE cxx_std_23)
 target_include_directories(${PROJECT_NAME} PUBLIC
-    ${imgui_SOURCE_DIR}
     ${sherpa_onnx_SOURCE_DIR}/sherpa-onnx/c-api
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
