@@ -5,6 +5,7 @@
 #include <SDL3_image/SDL_image.h>
 #include <SDL3_ttf/SDL_ttf.h>
 
+#include "SDL3/SDL_error.h"
 #include "error.h"
 #include "transcriber/transcriber.h"
 
@@ -26,6 +27,35 @@ void draw_bars(SDL_Renderer* renderer, SDL_FRect bar_rect, std::vector<float> ba
     SDL_RenderFillRect(renderer, &rect);
   }
 }
+
+class Icon {
+public:
+  ~Icon() { SDL_DestroyTexture(m_tex); }
+
+  Icon(SDL_Renderer* renderer, const char* path, float size,
+       SDL_Color color = {255, 255, 255}) {
+    SDL_IOStream* ops = SDL_IOFromFile(path, "rb");
+    if (!ops)
+      throw Error(SDL_GetError());
+
+    SDL_Surface* surf = IMG_LoadSizedSVG_IO(ops, size, size);
+    m_tex = SDL_CreateTextureFromSurface(renderer, surf);
+    m_size = size;
+    SDL_DestroySurface(surf);
+
+    // NOTE: This only works if the original svg is white
+    SDL_SetTextureColorMod(m_tex, color.r, color.g, color.b);
+  }
+
+  void render(SDL_Renderer* renderer, float x, float y) {
+    SDL_FRect icon_rect = {.x = x, .y = y, .w = m_size, .h = m_size};
+    SDL_RenderTexture(renderer, m_tex, nullptr, &icon_rect);
+  }
+
+private:
+  float m_size;
+  SDL_Texture* m_tex;
+};
 
 int main() {
   SDL_Window* window = nullptr;
@@ -64,17 +94,6 @@ int main() {
       throw Error(SDL_GetError());
     SDL_SetRenderVSync(renderer, 1);
 
-    int icon_size = 64;
-    const char* icon_path = "../assets/icons/copy.svg";
-    SDL_IOStream* ops = SDL_IOFromFile(icon_path, "rb");
-    if (!ops)
-      throw Error("Failed to load {}", icon_path);
-    SDL_Surface* surf = IMG_LoadSizedSVG_IO(ops, icon_size, icon_size);
-    SDL_Texture* tex = SDL_CreateTextureFromSurface(renderer, surf);
-    SDL_SetTextureColorMod(tex, 255, 0, 0); // assuming that the original svg is white
-    SDL_DestroySurface(surf);
-    SDL_FRect icon_rect = {.x = 0, .y = 0, .w = (float)icon_size, .h = (float)icon_size};
-
     TTF_Init();
     TTF_Font* font = TTF_OpenFont("../assets/Roboto-Regular.ttf", 25);
     if (font == nullptr)
@@ -86,6 +105,9 @@ int main() {
     SDL_FRect text_rect = {
         .x = 0, .y = 500, .w = (float)text_surf->w, .h = (float)text_surf->h};
     SDL_DestroySurface(text_surf);
+
+    Icon copy_icon(renderer, "../assets/icons/copy.svg", 32);
+    Icon save_icon(renderer, "../assets/icons/save.svg", 32);
 
     SDL_Event event;
     bool running = true;
@@ -113,8 +135,10 @@ int main() {
       SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
       SDL_RenderClear(renderer);
 
-      SDL_RenderTexture(renderer, tex, nullptr, &icon_rect);
       SDL_RenderTexture(renderer, text_tex, nullptr, &text_rect);
+
+      copy_icon.render(renderer, 0, 0);
+      save_icon.render(renderer, 32, 0);
 
       auto fft_bars = transcript.get_visualization_data();
       if (fft_bars.size() > 0 && prev_bars.size() > 0) {
@@ -132,7 +156,6 @@ int main() {
 
     transcript.stop();
 
-    SDL_DestroyTexture(tex);
     SDL_DestroyTexture(text_tex);
   } catch (const std::runtime_error& error) {
     SDL_Log(error.what(), "\n");

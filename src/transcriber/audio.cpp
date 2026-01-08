@@ -1,7 +1,9 @@
 #define MINIAUDIO_IMPLEMENTATION
 
-#include "transcriber/audio.h"
+#include <algorithm>
+
 #include "error.h"
+#include "transcriber/audio.h"
 
 AudioStream::~AudioStream() {
   if (m_started) {
@@ -94,10 +96,9 @@ void AudioStream::queue_samples(const void* input, void* output, u64 amount) {
   }
 
   // Queue the frames for denoising
+  int16_t* ptr = (int16_t*)input;
   std::vector<float> converted(amount);
-  for (u64 i = 0; i < amount; i++) {
-    converted[i] = ((int16_t*)input)[i];
-  }
+  std::transform(ptr, ptr + amount, converted.begin(), [](int16_t a) { return a; });
   m_convert_queue.push_samples(converted.data(), (int)amount);
 }
 
