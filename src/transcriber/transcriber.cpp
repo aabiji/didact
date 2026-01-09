@@ -1,7 +1,7 @@
 #include "transcriber/transcriber.h"
 
 Transcription::~Transcription() {
-  if (m_thread.joinable())
+  if (m_inference_thread.joinable() && m_audio_thread.joinable())
     stop();
 }
 
@@ -12,10 +12,10 @@ void Transcription::init(ModelPaths paths, const char* audio_path, bool capture)
 }
 
 void Transcription::start() {
-  auto audio_callback = [](ma_device* stream, void* output, const void* input, u32 size) {
-    Transcription* t = (Transcription*)stream->pUserData;
-    t->handle_audio(output, input, size);
-  };
+  m_stream.start();
+  m_stream.enable_resampler(1, 16000);
+  m_audio_thread =
+      std::jthread([this](std::stop_token token) { this->handle_audio(token); });
 
   auto speech_callback = [](void* user_data, std::string text, bool endpoint) {
     if (text.size() > 0) {
@@ -24,33 +24,32 @@ void Transcription::start() {
     }
   };
 
-  std::stop_token token = m_stopper.get_token();
-  m_stream.start(audio_callback, this);
-  m_stream.enable_resampler(1, 16000);
-  m_thread = std::thread([this, token, speech_callback] {
+  m_inference_thread = std::jthread([this, speech_callback](std::stop_token token) {
     m_stt.run_inference(token, speech_callback, this);
   });
 }
 
 void Transcription::stop() {
-  m_stopper.request_stop();
-  m_thread.join();
+  m_inference_thread.request_stop();
+  m_audio_thread.request_stop();
 
   // Flush any remaining audio frames in the denoiser's queue
-  while (m_stream.have_chunk(true)) {
-    auto samples = m_stream.get_chunk();
-    m_stream.write_samples(samples.data(), (u32)samples.size());
+  while (true) {
+    auto samples = m_stream.get_chunk({});
+    if (samples.size() == 0)
+      break;
+    m_stream.write_samples(samples.data(), samples.size());
   }
 }
 
-void Transcription::handle_audio(void* output, const void* input, u32 size) {
-  m_stream.queue_samples(input, output, size);
-  auto token = m_stopper.get_token();
+void Transcription::handle_audio(std::stop_token token) {
+  while (!token.stop_requested()) {
+    auto samples = m_stream.get_chunk(token);
+    if (token.stop_requested())
+      break;
 
-  while (m_stream.have_chunk(false) && !token.stop_requested()) {
-    auto samples = m_stream.get_chunk();
-    m_fft_bars = m_analyzer.process(samples.data(), (int)samples.size());
-    m_stream.write_samples(samples.data(), (u32)samples.size());
+    m_fft_bars = m_analyzer.process(samples.data(), samples.size());
+    m_stream.write_samples(samples.data(), samples.size());
 
     auto resampled = m_stream.resample(samples.data(), samples.size());
     m_stt.process(resampled.data(), resampled.size());

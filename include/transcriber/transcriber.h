@@ -12,7 +12,7 @@ public:
   void start();
   void stop();
 
-  void handle_audio(void* output, const void* input, u32 size);
+  void handle_audio(std::stop_token token);
   void handle_speech(std::string text, bool endpoint);
 
   std::string get_text();
@@ -23,8 +23,8 @@ private:
   std::vector<std::string> m_lines;
   std::vector<float> m_fft_bars;
 
-  std::thread m_thread;
-  std::stop_source m_stopper;
+  std::jthread m_audio_thread;
+  std::jthread m_inference_thread;
 
   SpectrumAnalyzer m_analyzer;
   SpeechToText m_stt;

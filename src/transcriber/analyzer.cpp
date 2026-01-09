@@ -68,13 +68,13 @@ void SpectrumAnalyzer::init(int sample_rate) {
   m_input_size = 1024;
 }
 
-float_vec SpectrumAnalyzer::process(int16_t* samples, size_t length) {
+float_vec SpectrumAnalyzer::process(float* samples, size_t length) {
   // Apply a crude noise gate:
   // Clear the input buffer if the input only coantains "silence"
   bool silent = true;
-  float threshold = 150.0f;
+  float threshold = 150.0f; // This is arbitrary
   for (size_t i = 0; i < length; i++) {
-    float value = (float)std::abs(samples[i]);
+    float value = std::abs(samples[i]);
     if (value > threshold) {
       silent = false;
       break;
@@ -92,7 +92,7 @@ float_vec SpectrumAnalyzer::process(int16_t* samples, size_t length) {
   return map_bins_to_bars(bins);
 }
 
-void SpectrumAnalyzer::fill_input_buffer(int16_t* data, size_t size) {
+void SpectrumAnalyzer::fill_input_buffer(float* data, size_t size) {
   // Ensure the input buffer is big enough for the new data. Also ensure
   // that the new input size is a power of 2, so that the FFT works correctly.
   if (size > m_input_size) {
@@ -103,16 +103,20 @@ void SpectrumAnalyzer::fill_input_buffer(int16_t* data, size_t size) {
   if (m_input_buffer.size() != m_input_size)
     m_input_buffer.resize(m_input_size, 0);
 
+  // Convert from a float pcm sample to a 16 bit pcm sample
+  auto convert = [](float s) { return (int16_t)(s * 32767.0f); };
+
   // Fill up to the end of the buffer
   size_t initial_size =
       m_write_offset + size < m_input_size ? size : m_input_size - m_write_offset;
-  std::copy(data, data + initial_size, m_input_buffer.begin() + (long)m_write_offset);
+  std::transform(data, data + initial_size, m_input_buffer.begin() + m_write_offset,
+                 convert);
   m_write_offset += initial_size;
 
   // Wrap back around and copy the reminaing data
   size_t remaining = size - initial_size;
   if (remaining > 0) {
-    std::copy(data + initial_size, data + size, m_input_buffer.begin());
+    std::transform(data + initial_size, data + size, m_input_buffer.begin(), convert);
     m_write_offset = remaining;
   }
 }

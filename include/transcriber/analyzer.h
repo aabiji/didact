@@ -8,11 +8,10 @@ using float_vec = std::vector<float>;
 class SpectrumAnalyzer {
 public:
   void init(int sample_rate);
-
-  float_vec process(int16_t* samples, size_t length);
+  float_vec process(float* samples, size_t length);
 
 private:
-  void fill_input_buffer(int16_t* data, size_t size);
+  void fill_input_buffer(float* data, size_t size);
   float_vec get_frequency_bins();
   float_vec map_bins_to_bars(float_vec bins);
 

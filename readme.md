@@ -28,6 +28,7 @@ Thoughts:
   - Use std::jthread instead of std::thread
 - Render the text from a precomputed texture atlas
 - Improve the building/linking speeds
+- Does the spectrum analyzer need to work on int16_t samples??
 
 - Same ethos as obsidian where you're in charge of your files
 - Minimailist ui (black background, clean white text in a large font)

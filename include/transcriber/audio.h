@@ -14,18 +14,16 @@ public:
 
   // Either stream audio from a file, or capture audio from the microphone
   void init(const char* path, bool is_capture);
+  void start();
 
-  void start(ma_device_data_proc callback, void* user_data);
   u32 sample_rate();
-
-  bool have_chunk(bool flush);
-  std::vector<int16_t> get_chunk();
+  std::vector<float> get_chunk(std::stop_token token);
 
   u64 write_samples(const void* input, u32 size);
-  void queue_samples(const void* input, void* output, u64 amount);
+  void queue_samples(const void* input, void* output, u64 num_samples);
 
   void enable_resampler(u32 channels, u32 samplerate);
-  std::vector<float> resample(int16_t* samples, u64 length);
+  std::vector<float> resample(float* samples, u64 length);
 
 private:
   ma_device_config init_device_codec(const char* path);
@@ -41,6 +39,5 @@ private:
   ma_data_converter m_converter;
 
   ReNameNoiseDenoiseState* m_denoiser;
-  SampleQueue<float> m_convert_queue;
-  SampleQueue<int16_t> m_raw_queue;
+  SampleQueue<float> m_samples;
 };
