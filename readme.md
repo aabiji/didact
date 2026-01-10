@@ -8,28 +8,28 @@ cmake -S . -B build -G Ninja -D CMAKE_BUILD_TYPE=Debug
 
 Icons from: https://fonts.google.com/icons
 
-Thoughts:
-- Make the text read only during playback (until the stop button is pressed)
-- Concept of UI pages?
-- We have to implement out own text input widget if we want markdown syntax highlighting
-- Button to copy the transcription or save the transcription
-- Start implementing a custon text editing widget
-- Some improvements to the transcriber module:
-  - In the ring buffers, first copy both portions to a linear array (using memcpy), then
-    process on the array. Is is less ergonomic than just twiddling the index,
-    but it improves cache coehrence.
-  - SampleQueue should use a ring buffer, not a queue, make the ring buffer [lock free](https://github.com/QuantumLeaps/lock-free-ring-buffer/tree/main)
-  - Move the fft and rnnoise out of the audio callback, push the samples to a
-    queue and operate on samples from the queue (maybe the central data queue idea wasn't bad at all)
-  - Handle possible failues better during initialization (and handle cleanup properly in case of failure)
-  - Deal with race conditions (add mutex to the text and fft bars getters and setters)
-  - Replace the magic numbers with constnats, use ma_result_description in errors
-  - Pass a string view to the speech callback
-  - Use std::jthread instead of std::thread
-- Render the text from a precomputed texture atlas
-- Improve the building/linking speeds
-- Does the spectrum analyzer need to work on int16_t samples??
+Goals for today:
+[ ] Visualize waveforms instead of FFT output. That way we don't need to remove noise, which means
+  that we can update the waveform in real time from the audio callback.
 
-- Same ethos as obsidian where you're in charge of your files
-- Minimailist ui (black background, clean white text in a large font)
-- Big idea: Samsung Notes clone that's open source, cross platform and fast, with voice dicdation
+[ ] Simplify the code. Can we merge the spectrum analyzer and the transcriber into one class?
+  We pull samples from the audio stream, output to the file (if capture), in the callback.
+  Then in the callback function we'll provide, we run RMS and queue the samples.
+  In a separate thread we read the samples and then run rnnoise then the speech to text
+  (Actually combine the RNNoise usage and the sherpa[ ]onnx usage in the same class).
+
+[ ] Visualize the waveform in real time. Bsaically, each data callback we get we should
+  calculate RMS on the provided samples. Add the output to a list, then when rendering we
+  just render the bars sliding to the left.
+
+[ ] Render text by blitting an entire unicode charset to a massive texture. Then just crop
+  part of the text to render a character.
+
+[ ] Create a UI module. Move the code for the texture atlas and the icon class and the button class there
+
+[ ] Render the basic UI, place an audio waveform at the bottom, with a play/pause button on the side.
+  Then the transcribed text near the top of the window, with a copy button and save button to the top right corner.
+
+[ ] Shave the compile times down to a few miliseconds
+
+[ ] Consider what data structure to use for the text editing component

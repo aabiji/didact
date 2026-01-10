@@ -5,13 +5,19 @@ include(FetchContent)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(BUILD_SHARED_LIBS ON CACHE BOOL "Build shared libraries" FORCE)
-set(CMAKE_EXE_LINKER_FLAGS "-fuse-ld=mold")
-set(CMAKE_SHARED_LINKER_FLAGS "-fuse-ld=mold")
+add_link_options("-fuse-ld=mold")
+set(FETCHCONTENT_QUIET OFF) # speed up fetchcontent with shallow clones
+
+find_program(CCACHE_PROGRAM ccache)
+if (CCACHE_PROGRAM)
+    set(CMAKE_CXX_COMPILER_LAUNCHER, "${CCACHE_PROGRAM}")
+endif()
 
 # SDL3 + SDL_Image + SDL_TTF
 FetchContent_Declare(
     sdl3
     GIT_REPOSITORY https://github.com/libsdl-org/SDL.git
+    GIT_SHALLOW true
     GIT_TAG main
     FIND_PACKAGE_ARGS
 )
@@ -21,6 +27,7 @@ FetchContent_Declare(
     sdl_image
     GIT_REPOSITORY https://github.com/libsdl-org/SDL_image
     GIT_TAG main
+    GIT_SHALLOW true
     FIND_PACKAGE_ARGS
 )
 FetchContent_MakeAvailable(sdl_image)
@@ -29,6 +36,7 @@ FetchContent_Declare(
     sdl_ttf
     GIT_REPOSITORY https://github.com/libsdl-org/SDL_ttf
     GIT_TAG main
+    GIT_SHALLOW true
     FIND_PACKAGE_ARGS
 )
 FetchContent_MakeAvailable(sdl_ttf)
@@ -38,6 +46,7 @@ FetchContent_Declare(
     miniaudio
     GIT_REPOSITORY https://github.com/mackron/miniaudio.git
     GIT_TAG master
+    GIT_SHALLOW true
 )
 FetchContent_MakeAvailable(miniaudio)
 
@@ -46,6 +55,7 @@ FetchContent_Declare(
     renamenoise
     GIT_REPOSITORY https://github.com/mumble-voip/ReNameNoise.git
     GIT_TAG master
+    GIT_SHALLOW true
 )
 FetchContent_MakeAvailable(renamenoise)
 
@@ -54,14 +64,15 @@ FetchContent_Declare(
     sherpa_onnx
     GIT_REPOSITORY https://github.com/k2-fsa/sherpa-onnx.git
     GIT_TAG master
+    GIT_SHALLOW true
 )
 FetchContent_MakeAvailable(sherpa_onnx)
 
 add_executable(${PROJECT_NAME}
     src/main.cpp
-    src/transcriber/analyzer.cpp
-    src/transcriber/audio.cpp
-    src/transcriber/transcriber.cpp
+    src/audio.cpp
+    src/speech.cpp
+    src/transcriber.cpp
 )
 
 target_link_libraries(
@@ -76,7 +87,15 @@ target_link_libraries(
 )
 
 target_compile_features(${PROJECT_NAME} PRIVATE cxx_std_23)
+
 target_include_directories(${PROJECT_NAME} PUBLIC
     ${sherpa_onnx_SOURCE_DIR}/sherpa-onnx/c-api
     ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+
+target_precompile_headers(${PROJECT_NAME} PRIVATE
+    <SDL3/SDL.h>
+    <memory>
+    <string>
+    <vector>
 )

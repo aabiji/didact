@@ -1,6 +1,6 @@
 #define MINIAUDIO_IMPLEMENTATION
 
-#include "transcriber/audio.h"
+#include "audio.h"
 #include "error.h"
 
 AudioStream::~AudioStream() {
@@ -16,23 +16,25 @@ AudioStream::~AudioStream() {
 
   if (m_resampling)
     ma_data_converter_uninit(&m_converter, nullptr);
-
-  renamenoise_destroy(m_denoiser);
 }
 
 void AudioStream::init(const char* path, bool is_capture) {
   m_is_capture = is_capture;
   m_started = false;
   m_resampling = false;
-
   init_device_codec(path);
-  m_denoiser = renamenoise_create(nullptr);
 }
 
-void AudioStream::start() {
+void AudioStream::start(AudioCallback user_callback, void* user_data) {
+  m_user_data = user_data;
+  m_user_callback = user_callback;
+
   auto callback = [](ma_device* stream, void* output, const void* input, u32 size) {
     AudioStream* s = (AudioStream*)stream->pUserData;
+    float* ptr = (float*)(stream->type == ma_device_type_capture ? input : output);
+
     s->queue_samples(input, output, size);
+    s->m_user_callback(s->m_user_data, ptr, size);
   };
 
   m_dev_cfg.dataCallback = callback;
@@ -76,49 +78,28 @@ u32 AudioStream::sample_rate() {
   return m_is_capture ? m_encoder.config.sampleRate : m_decoder.outputSampleRate;
 }
 
-u64 AudioStream::write_samples(const void* input, u32 size) {
-  // Only writing to an output file while capturing
-  if (!m_is_capture)
-    return 0;
-  u64 written = 0;
-  ma_encoder_write_pcm_frames(&m_encoder, input, size, &written);
-  return written;
+std::vector<float> AudioStream::get_samples(std::stop_token token, int size) {
+  return m_samples.is_empty() ? std::vector<float>{} : m_samples.pop_samples(size, token);
 }
 
 void AudioStream::queue_samples(const void* input, void* output, u64 num_samples) {
   u64 amount = num_samples;
-  if (!m_is_capture) // Read the frames into the output buffer
+  if (m_is_capture) // Write the captured audio to the output file
+    ma_encoder_write_pcm_frames(&m_encoder, input, num_samples, nullptr);
+  else // Read the frames into the output buffer
     ma_decoder_read_pcm_frames(&m_decoder, output, num_samples, &amount);
 
-  float* ptr = (float*)(m_is_capture ? output : input);
+  float* ptr = (float*)(m_device.type == ma_device_type_capture ? input : output);
   m_samples.push_samples(ptr, amount);
 }
 
-std::vector<float> AudioStream::get_chunk(std::stop_token token) {
-  if (m_samples.is_empty())
-    return {};
-
-  // Only denoise captured audio
-  if (!m_is_capture) {
-    int size = m_device.playback.internalPeriodSizeInFrames;
-    return m_samples.pop_samples(size, token);
-  }
-
-  unsigned int size = renamenoise_get_frame_size();
-  std::vector<float> input = m_samples.pop_samples(size, token);
-
-  std::vector<float> output(size);
-  renamenoise_process_frame(m_denoiser, output.data(), input.data());
-  return output;
-}
-
-void AudioStream::enable_resampler(u32 channels, u32 samplerate) {
+void AudioStream::enable_resampler(u32 samplerate) {
   ma_format in_fmt = m_is_capture ? m_encoder.config.format : m_decoder.outputFormat;
   u32 in_channels = m_is_capture ? m_encoder.config.channels : m_decoder.outputChannels;
   u32 in_rate = m_is_capture ? m_encoder.config.sampleRate : m_decoder.outputSampleRate;
 
   ma_data_converter_config config = ma_data_converter_config_init(
-      in_fmt, ma_format_f32, in_channels, channels, in_rate, samplerate);
+      in_fmt, in_fmt, in_channels, in_channels, in_rate, samplerate);
 
   if (ma_data_converter_init(&config, nullptr, &m_converter) != MA_SUCCESS)
     throw Error("Failed to create the resampler");

@@ -1,32 +1,10 @@
-#include <algorithm>
-
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_main.h>
 #include <SDL3_image/SDL_image.h>
 #include <SDL3_ttf/SDL_ttf.h>
 
-#include "SDL3/SDL_error.h"
 #include "error.h"
-#include "transcriber/transcriber.h"
-
-void draw_bars(SDL_Renderer* renderer, SDL_FRect bar_rect, std::vector<float> bars) {
-  int num_bars = (int)bars.size();
-  auto [min, max] = std::minmax_element(bars.begin(), bars.end());
-
-  for (int i = -(num_bars - 1); i < num_bars; i++) {
-    float value = bars[(size_t)abs(i)];
-    float value_percent = (value - *min) / (*max - *min);
-
-    SDL_FRect rect;
-    rect.w = bar_rect.w;
-    rect.h = value_percent * bar_rect.y;
-    rect.x = bar_rect.x + 2 * ((float)i * rect.w);
-    rect.y = bar_rect.y - rect.h / 2.0f;
-
-    SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);
-    SDL_RenderFillRect(renderer, &rect);
-  }
-}
+#include "transcriber.h"
 
 class Icon {
 public:
@@ -70,9 +48,8 @@ int main() {
         "../assets/sherpa-onnx-streaming-zipformer-en-kroko-2025-08-06/decoder.onnx",
         "../assets/sherpa-onnx-streaming-zipformer-en-kroko-2025-08-06/joiner.onnx",
     };
-    Transcription transcript;
-    transcript.init(paths, "test.wav", true);
-    transcript.start();
+    TranscriptEngine engine(paths, "test.wav", true);
+    engine.start();
 
     if (!SDL_Init(SDL_INIT_VIDEO))
       throw Error(SDL_GetError());
@@ -111,9 +88,8 @@ int main() {
 
     SDL_Event event;
     bool running = true;
-    float_vec prev_bars;
 
-    SDL_FRect bar_rect = {.x = (float)window_width / 2.0f, .y = 50, .w = 5, .h = 100};
+    SDL_FRect bar_rect = {.x = (float)window_width / 2.0f, .y = 50, .w = 3, .h = 80};
     int ui_offset_y = bar_rect.y + 25;
 
     while (running) {
@@ -140,21 +116,24 @@ int main() {
       copy_icon.render(renderer, 0, 0);
       save_icon.render(renderer, 32, 0);
 
-      auto fft_bars = transcript.get_visualization_data();
-      if (fft_bars.size() > 0 && prev_bars.size() > 0) {
-        // Peek decay between frames (rise sharply then fall slowly)
-        float_vec bars(fft_bars.size());
-        for (size_t i = 0; i < bars.size(); i++) {
-          bars[i] = std::max(fft_bars[i], prev_bars[i] * 0.85f);
-        }
-        draw_bars(renderer, bar_rect, bars);
+      auto [amplitude_bars, min, max] = engine.get_waveform();
+      for (int i = amplitude_bars.size() - 1; i >= 0; i--) {
+        SDL_FRect rect;
+        rect.w = bar_rect.w;
+        rect.h = ((amplitude_bars[i] - min) / (max - min)) * bar_rect.h;
+        rect.x = bar_rect.x + 4 - ((amplitude_bars.size() - i) * rect.w);
+        rect.y = bar_rect.y - rect.h / 2.0f;
+        if (rect.x < 0)
+          break;
+
+        SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);
+        SDL_RenderFillRect(renderer, &rect);
       }
-      prev_bars = fft_bars;
 
       SDL_RenderPresent(renderer);
     }
 
-    transcript.stop();
+    engine.stop();
 
     SDL_DestroyTexture(text_tex);
   } catch (const std::runtime_error& error) {

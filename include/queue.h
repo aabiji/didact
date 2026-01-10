@@ -6,7 +6,7 @@
 #include <stop_token>
 #include <vector>
 
-template <typename T> class SampleQueue {
+class SampleQueue {
 public:
   bool have_enough(int amount) {
     std::unique_lock<std::mutex> guard(m_mutex);
@@ -14,9 +14,10 @@ public:
   }
 
   // Push to the queue, which doesn't have a maximum size
-  void push_samples(T* samples, int num_samples) {
+  void push_samples(float* samples, int num_samples) {
     std::unique_lock<std::mutex> guard(m_mutex);
     m_data.insert(m_data.end(), samples, samples + num_samples);
+    m_not_empty.notify_one();
   }
 
   bool is_empty() {
@@ -25,9 +26,9 @@ public:
   };
 
   // Wait until there are enough samples in the queue, then pop
-  std::vector<T> pop_samples(int num_samples, std::stop_token token = {}) {
+  std::vector<float> pop_samples(int num_samples, std::stop_token token = {}) {
     std::unique_lock<std::mutex> guard(m_mutex);
-    std::vector<T> output(num_samples, T{});
+    std::vector<float> output(num_samples, 0);
 
     auto lambda = [&] { return num_samples <= m_data.size(); };
     if (!m_not_empty.wait(guard, token, lambda))
@@ -40,7 +41,7 @@ public:
   }
 
 private:
-  std::deque<T> m_data;
+  std::deque<float> m_data;
   std::mutex m_mutex;
   std::condition_variable_any m_not_empty;
 };
