@@ -48,7 +48,7 @@ int main() {
         "../assets/sherpa-onnx-streaming-zipformer-en-kroko-2025-08-06/decoder.onnx",
         "../assets/sherpa-onnx-streaming-zipformer-en-kroko-2025-08-06/joiner.onnx",
     };
-    TranscriptEngine engine(paths, "test.wav", true);
+    Transcriber engine(paths, "test.wav", true);
     engine.start();
 
     if (!SDL_Init(SDL_INIT_VIDEO))
@@ -89,8 +89,13 @@ int main() {
     SDL_Event event;
     bool running = true;
 
-    SDL_FRect bar_rect = {.x = (float)window_width / 2.0f, .y = 50, .w = 3, .h = 80};
-    int ui_offset_y = bar_rect.y + 25;
+    float area_height = 100.0f;
+    float area_width = (float)window_width / 1.5f;
+    float area_padding = (window_width - area_width) / 2.0f;
+    SDL_FRect bar_rect = {.x = window_width - area_padding,
+                          .y = window_height - (area_height / 2.0f),
+                          .w = 3,
+                          .h = 80};
 
     while (running) {
       while (SDL_PollEvent(&event)) {
@@ -116,14 +121,14 @@ int main() {
       copy_icon.render(renderer, 0, 0);
       save_icon.render(renderer, 32, 0);
 
-      auto [amplitude_bars, min, max] = engine.get_waveform();
-      for (int i = amplitude_bars.size() - 1; i >= 0; i--) {
+      std::vector<float> amplitudes = engine.get_normalized_waveform();
+      for (int i = amplitudes.size() - 1; i >= 0; i--) {
         SDL_FRect rect;
         rect.w = bar_rect.w;
-        rect.h = ((amplitude_bars[i] - min) / (max - min)) * bar_rect.h;
-        rect.x = bar_rect.x + 4 - ((amplitude_bars.size() - i) * rect.w);
+        rect.h = amplitudes[i] * bar_rect.h;
+        rect.x = bar_rect.x - ((amplitudes.size() - i) * (rect.w * 2));
         rect.y = bar_rect.y - rect.h / 2.0f;
-        if (rect.x < 0)
+        if (rect.x < area_padding)
           break;
 
         SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);
@@ -132,8 +137,6 @@ int main() {
 
       SDL_RenderPresent(renderer);
     }
-
-    engine.stop();
 
     SDL_DestroyTexture(text_tex);
   } catch (const std::runtime_error& error) {

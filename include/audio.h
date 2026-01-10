@@ -14,13 +14,12 @@ using AudioCallback = std::function<void(void*, float*, u32)>;
 
 class AudioStream {
 public:
-  ~AudioStream();
-
   // Either stream audio from a file, or capture audio from the microphone
-  void init(const char* path, bool is_capture);
-  void start(AudioCallback callback, void* user_data);
+  ~AudioStream();
+  AudioStream(const char* path, bool is_capture);
 
   u32 sample_rate();
+  void start(AudioCallback callback, void* user_data);
   std::vector<float> get_samples(std::stop_token token, int size);
   void queue_samples(const void* input, void* output, u64 num_samples);
 

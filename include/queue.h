@@ -8,11 +8,6 @@
 
 class SampleQueue {
 public:
-  bool have_enough(int amount) {
-    std::unique_lock<std::mutex> guard(m_mutex);
-    return amount < m_data.size();
-  }
-
   // Push to the queue, which doesn't have a maximum size
   void push_samples(float* samples, int num_samples) {
     std::unique_lock<std::mutex> guard(m_mutex);

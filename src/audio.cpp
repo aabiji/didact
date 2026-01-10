@@ -3,6 +3,13 @@
 #include "audio.h"
 #include "error.h"
 
+AudioStream::AudioStream(const char* path, bool is_capture) {
+  m_is_capture = is_capture;
+  m_started = false;
+  m_resampling = false;
+  init_device_codec(path);
+}
+
 AudioStream::~AudioStream() {
   if (m_started) {
     ma_device_stop(&m_device);
@@ -16,13 +23,6 @@ AudioStream::~AudioStream() {
 
   if (m_resampling)
     ma_data_converter_uninit(&m_converter, nullptr);
-}
-
-void AudioStream::init(const char* path, bool is_capture) {
-  m_is_capture = is_capture;
-  m_started = false;
-  m_resampling = false;
-  init_device_codec(path);
 }
 
 void AudioStream::start(AudioCallback user_callback, void* user_data) {

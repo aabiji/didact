@@ -21,20 +21,24 @@ struct ModelPaths {
 class SpeechToText {
 public:
   ~SpeechToText();
-  void init(ModelPaths paths);
+  SpeechToText(ModelPaths paths);
 
   int expected_chunk_size();
-  std::vector<float> denoise(float* samples, int num_samples);
+  bool initialized();
 
   void process(float* samples, int num_samples);
   void run_inference(std::stop_token token, TextHandler handler, void* user_data);
+  std::vector<float> denoise(float* samples, int num_samples);
 
 private:
+  void init();
+
+  bool m_initialized;
+  ModelPaths m_model_paths;
   std::mutex m_mutex;
   std::condition_variable_any m_have_enough_data;
 
   ReNameNoiseDenoiseState* m_denoiser;
-
   const SherpaOnnxOnlineRecognizer* m_recognizer;
   const SherpaOnnxOnlineStream* m_stream;
 };

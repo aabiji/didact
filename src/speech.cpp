@@ -1,25 +1,32 @@
 #include "speech.h"
 
+SpeechToText::SpeechToText(ModelPaths paths) {
+  m_model_paths = paths;
+  m_initialized = false;
+}
+
 SpeechToText::~SpeechToText() {
-  SherpaOnnxOnlineStreamInputFinished(m_stream);
-  SherpaOnnxDestroyOnlineStream(m_stream);
-  SherpaOnnxDestroyOnlineRecognizer(m_recognizer);
-  renamenoise_destroy(m_denoiser);
+  if (m_initialized) {
+    SherpaOnnxOnlineStreamInputFinished(m_stream);
+    SherpaOnnxDestroyOnlineStream(m_stream);
+    SherpaOnnxDestroyOnlineRecognizer(m_recognizer);
+    renamenoise_destroy(m_denoiser);
+  }
 }
 
 int SpeechToText::expected_chunk_size() { return renamenoise_get_frame_size(); }
 
-void SpeechToText::init(ModelPaths paths) {
-  m_denoiser = renamenoise_create(nullptr);
+bool SpeechToText::initialized() { return m_initialized; }
 
+void SpeechToText::init() {
   SherpaOnnxOnlineRecognizerConfig config = {0};
   config.model_config.debug = 0;
   config.model_config.num_threads = std::min(2, (int)std::thread::hardware_concurrency());
   config.model_config.provider = "cpu";
-  config.model_config.tokens = paths.tokens;
-  config.model_config.transducer.encoder = paths.encoder;
-  config.model_config.transducer.decoder = paths.decoder;
-  config.model_config.transducer.joiner = paths.joiner;
+  config.model_config.tokens = m_model_paths.tokens;
+  config.model_config.transducer.encoder = m_model_paths.encoder;
+  config.model_config.transducer.decoder = m_model_paths.decoder;
+  config.model_config.transducer.joiner = m_model_paths.joiner;
 
   config.max_active_paths = 4;
   config.decoding_method = "modified_beam_search";
@@ -33,6 +40,8 @@ void SpeechToText::init(ModelPaths paths) {
 
   m_recognizer = SherpaOnnxCreateOnlineRecognizer(&config);
   m_stream = SherpaOnnxCreateOnlineStream(m_recognizer);
+  m_denoiser = renamenoise_create(nullptr);
+  m_initialized = true;
 }
 
 std::vector<float> SpeechToText::denoise(float* samples, int num_samples) {
@@ -50,15 +59,24 @@ void SpeechToText::process(float* samples, int num_samples) {
 
 void SpeechToText::run_inference(std::stop_token token, TextHandler handler,
                                  void* user_data) {
+  if (!m_initialized)
+    init();
+
   while (!token.stop_requested()) {
     // Wait until there's enough samples to run inference on
     std::unique_lock<std::mutex> guard(m_mutex);
-    auto lambda = [&] { return SherpaOnnxIsOnlineStreamReady(m_recognizer, m_stream); };
+    auto lambda = [&] {
+      return SherpaOnnxIsOnlineStreamReady(m_recognizer, m_stream) ||
+             token.stop_requested();
+    };
     if (!m_have_enough_data.wait(guard, token, lambda))
       break; // A stop was requested
 
-    while (SherpaOnnxIsOnlineStreamReady(m_recognizer, m_stream))
+    while (SherpaOnnxIsOnlineStreamReady(m_recognizer, m_stream)) {
+      if (token.stop_requested())
+        break;
       SherpaOnnxDecodeOnlineStream(m_recognizer, m_stream);
+    }
 
     const SherpaOnnxOnlineRecognizerResult* r =
         SherpaOnnxGetOnlineStreamResult(m_recognizer, m_stream);
