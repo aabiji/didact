@@ -68,9 +68,19 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(sherpa_onnx)
 
+# utf8-cpp
+FetchContent_Declare(
+    utf8cpp
+    GIT_REPOSITORY https://github.com/nemtrif/utfcpp
+    GIT_TAG master
+    GIT_SHALLOW true
+)
+FetchContent_MakeAvailable(utf8cpp)
+
 add_executable(${PROJECT_NAME}
     src/main.cpp
     src/audio.cpp
+    src/font.cpp
     src/speech.cpp
     src/transcriber.cpp
 )
@@ -84,6 +94,7 @@ target_link_libraries(
     renamenoise
     sherpa-onnx-cxx-api
     sherpa-onnx-c-api
+    utf8cpp
 )
 
 target_compile_features(${PROJECT_NAME} PRIVATE cxx_std_23)
@@ -98,4 +109,9 @@ target_precompile_headers(${PROJECT_NAME} PRIVATE
     <memory>
     <string>
     <vector>
+    <thread>
+    <condition_variable>
+    <mutex>
+    <deque>
+    <stop_token>
 )

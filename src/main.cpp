@@ -1,9 +1,9 @@
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_main.h>
 #include <SDL3_image/SDL_image.h>
-#include <SDL3_ttf/SDL_ttf.h>
 
 #include "error.h"
+#include "font.h"
 #include "transcriber.h"
 
 class Icon {
@@ -71,20 +71,9 @@ int main() {
       throw Error(SDL_GetError());
     SDL_SetRenderVSync(renderer, 1);
 
-    TTF_Init();
-    TTF_Font* font = TTF_OpenFont("../assets/Roboto-Regular.ttf", 25);
-    if (font == nullptr)
-      throw Error(SDL_GetError());
-    const char* text = "hello :)";
-    SDL_Color text_color = {255, 255, 255, 255};
-    SDL_Surface* text_surf = TTF_RenderText_Solid(font, text, 8, text_color);
-    SDL_Texture* text_tex = SDL_CreateTextureFromSurface(renderer, text_surf);
-    SDL_FRect text_rect = {
-        .x = 0, .y = 500, .w = (float)text_surf->w, .h = (float)text_surf->h};
-    SDL_DestroySurface(text_surf);
-
     Icon copy_icon(renderer, "../assets/icons/copy.svg", 32);
     Icon save_icon(renderer, "../assets/icons/save.svg", 32);
+    FontCache font(renderer, "../assets/Roboto-Regular.ttf", 18, {255, 255, 255, 255});
 
     SDL_Event event;
     bool running = true;
@@ -116,10 +105,9 @@ int main() {
       SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
       SDL_RenderClear(renderer);
 
-      SDL_RenderTexture(renderer, text_tex, nullptr, &text_rect);
-
-      copy_icon.render(renderer, 0, 0);
-      save_icon.render(renderer, 32, 0);
+      font.render("Hello :)", 0, 0);
+      copy_icon.render(renderer, 0, 50);
+      save_icon.render(renderer, 32, 50);
 
       std::vector<float> amplitudes = engine.get_normalized_waveform();
       for (int i = amplitudes.size() - 1; i >= 0; i--) {
@@ -138,7 +126,6 @@ int main() {
       SDL_RenderPresent(renderer);
     }
 
-    SDL_DestroyTexture(text_tex);
   } catch (const std::runtime_error& error) {
     SDL_Log(error.what(), "\n");
     return -1;

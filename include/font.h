@@ -1,0 +1,33 @@
+#pragma once
+
+#include <SDL3_ttf/SDL_ttf.h>
+#include <unordered_map>
+
+struct Glyph {
+  SDL_FRect rect;
+  int texture_offset;
+};
+
+class FontCache {
+public:
+  ~FontCache();
+  FontCache(SDL_Renderer* renderer, const char* path, int size, SDL_Color color);
+  void render(std::string str, float x, float y);
+
+private:
+  Glyph get_glyph(unsigned int codepoint);
+  void create_new_texture();
+
+  int m_row_height;
+  int m_x_offset;
+  int m_y_offset;
+  int m_texture_offset;
+
+  std::unordered_map<unsigned int, Glyph> m_glyphs;
+  std::vector<SDL_Texture*> m_textures;
+
+  int m_texture_size;
+  SDL_Color m_color;
+  TTF_Font* m_font;
+  SDL_Renderer* m_renderer;
+};
