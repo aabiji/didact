@@ -35,6 +35,7 @@ void Transcriber::start() {
 }
 
 void Transcriber::calculate_amplitude(float* samples, int num_samples) {
+  // Initialize the buffer of amplitudes
   if (m_amp_buffer.size() == 0) {
     m_write_offset = 0;
     m_amp_buffer_size = 1024;
@@ -82,6 +83,8 @@ void Transcriber::update_transcript(std::string text, bool endpoint) {
   }
 }
 
+std::vector<std::string>& Transcriber::get_transcript() { return m_lines; }
+
 std::vector<float> Transcriber::get_normalized_waveform() {
   // Copy the oldest data first
   std::vector<float> amplitudes(m_amp_buffer_size);
@@ -90,12 +93,4 @@ std::vector<float> Transcriber::get_normalized_waveform() {
   std::copy(m_amp_buffer.begin(), m_amp_buffer.begin() + m_write_offset,
             amplitudes.begin() + (m_amp_buffer_size - m_write_offset));
   return amplitudes;
-}
-
-std::string Transcriber::get_transcript() {
-  std::string text = "";
-  for (const auto& line : m_lines)
-    text += line + "\n";
-  text += m_current_line;
-  return text;
 }

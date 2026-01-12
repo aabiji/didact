@@ -8,11 +8,18 @@ struct Glyph {
   int texture_offset;
 };
 
+struct Vec2 {
+  float x, y;
+  Vec2 operator+(Vec2 b) { return {x + b.x, y + b.y}; }
+};
+
 class FontCache {
 public:
   ~FontCache();
   FontCache(SDL_Renderer* renderer, const char* path, int size, SDL_Color color);
-  void render(std::string str, float x, float y);
+
+  void render(std::string str, Vec2 position);
+  Vec2 text_size(std::string str);
 
 private:
   Glyph get_glyph(unsigned int codepoint);

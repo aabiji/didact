@@ -15,7 +15,7 @@ public:
   void calculate_amplitude(float* samples, int num_samples);
   void process_audio_stream(std::stop_token token);
 
-  std::string get_transcript();
+  std::vector<std::string>& get_transcript();
   std::vector<float> get_normalized_waveform();
 
 private:

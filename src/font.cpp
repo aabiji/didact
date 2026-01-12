@@ -40,15 +40,15 @@ FontCache::FontCache(SDL_Renderer* renderer, const char* path, int size,
   }
 }
 
-void FontCache::render(std::string str, float x, float y) {
+void FontCache::render(std::string str, Vec2 p) {
   using iter = std::string::const_iterator;
   utf8::iterator<iter> it(str.begin(), str.begin(), str.end());
   utf8::iterator<iter> end(str.end(), str.begin(), str.end());
-  float text_x = x;
+  float text_x = p.x;
 
   while (it != end) {
     Glyph glyph = get_glyph(*it);
-    SDL_FRect target_rect = {.x = text_x, .y = y, .w = glyph.rect.w, .h = glyph.rect.h};
+    SDL_FRect target_rect = {.x = text_x, .y = p.y, .w = glyph.rect.w, .h = glyph.rect.h};
     SDL_RenderTexture(m_renderer, m_textures[glyph.texture_offset], &glyph.rect,
                       &target_rect);
     text_x += glyph.rect.w;
@@ -110,4 +110,19 @@ void FontCache::create_new_texture() {
   SDL_RenderClear(m_renderer);
   SDL_SetRenderTarget(m_renderer, nullptr);
   m_textures.push_back(texture);
+}
+
+Vec2 FontCache::text_size(std::string str) {
+  using iter = std::string::const_iterator;
+  utf8::iterator<iter> it(str.begin(), str.begin(), str.end());
+  utf8::iterator<iter> end(str.end(), str.begin(), str.end());
+
+  Vec2 size = {0.0, 0.0};
+  while (it != end) {
+    Glyph glyph = get_glyph(*it);
+    size.x += glyph.rect.w;
+    size.y = std::max(glyph.rect.h, size.y);
+    ++it;
+  }
+  return size;
 }

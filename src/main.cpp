@@ -2,38 +2,8 @@
 #include <SDL3/SDL_main.h>
 #include <SDL3_image/SDL_image.h>
 
-#include "error.h"
-#include "font.h"
 #include "transcriber.h"
-
-class Icon {
-public:
-  ~Icon() { SDL_DestroyTexture(m_tex); }
-
-  Icon(SDL_Renderer* renderer, const char* path, float size,
-       SDL_Color color = {255, 255, 255}) {
-    SDL_IOStream* ops = SDL_IOFromFile(path, "rb");
-    if (!ops)
-      throw Error(SDL_GetError());
-
-    SDL_Surface* surf = IMG_LoadSizedSVG_IO(ops, size, size);
-    m_tex = SDL_CreateTextureFromSurface(renderer, surf);
-    m_size = size;
-    SDL_DestroySurface(surf);
-
-    // NOTE: This only works if the original svg is white
-    SDL_SetTextureColorMod(m_tex, color.r, color.g, color.b);
-  }
-
-  void render(SDL_Renderer* renderer, float x, float y) {
-    SDL_FRect icon_rect = {.x = x, .y = y, .w = m_size, .h = m_size};
-    SDL_RenderTexture(renderer, m_tex, nullptr, &icon_rect);
-  }
-
-private:
-  float m_size;
-  SDL_Texture* m_tex;
-};
+#include "ui.h"
 
 int main() {
   SDL_Window* window = nullptr;
@@ -71,9 +41,15 @@ int main() {
       throw Error(SDL_GetError());
     SDL_SetRenderVSync(renderer, 1);
 
-    Icon copy_icon(renderer, "../assets/icons/copy.svg", 32);
-    Icon save_icon(renderer, "../assets/icons/save.svg", 32);
     FontCache font(renderer, "../assets/Roboto-Regular.ttf", 18, {255, 255, 255, 255});
+
+    Button copy(renderer, &font);
+    copy.set_icon("../assets/icons/copy.svg", 32);
+
+    Button save(renderer, &font);
+    save.set_icon("../assets/icons/save.svg", 32);
+
+    Cursor cursor;
 
     SDL_Event event;
     bool running = true;
@@ -105,9 +81,16 @@ int main() {
       SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
       SDL_RenderClear(renderer);
 
-      font.render("Hello :)", 0, 0);
-      copy_icon.render(renderer, 0, 50);
-      save_icon.render(renderer, 32, 50);
+      copy.render({window_width - copy.size().x, 0}, cursor);
+      save.render({window_width - save.size().x, copy.size().y + 25}, cursor);
+
+      // TODO: define a text editing area (that can be read only toggled)
+      auto lines = engine.get_transcript();
+      if (lines.size() == 0)
+        font.render("Capturing...", {0.0f, 0.0f}); // TODO: add nice cetered animation
+      for (int i = 0; i < lines.size(); i++) {
+        font.render(lines[i], {0.0f, 20.0f * i}); // TODO: how to determine the proper y?
+      }
 
       std::vector<float> amplitudes = engine.get_normalized_waveform();
       for (int i = amplitudes.size() - 1; i >= 0; i--) {
