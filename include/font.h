@@ -3,14 +3,14 @@
 #include <SDL3_ttf/SDL_ttf.h>
 #include <unordered_map>
 
-struct Glyph {
-  SDL_FRect rect;
-  int texture_offset;
-};
-
 struct Vec2 {
   float x, y;
   Vec2 operator+(Vec2 b) { return {x + b.x, y + b.y}; }
+};
+
+struct Glyph {
+  SDL_FRect rect;
+  int texture_offset;
 };
 
 class FontCache {

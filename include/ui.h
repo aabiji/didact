@@ -3,6 +3,7 @@
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_main.h>
 #include <SDL3_image/SDL_image.h>
+#include <utility>
 
 #include "error.h"
 #include "font.h"
@@ -33,22 +34,21 @@ private:
   SDL_Cursor* m_pointer;
 };
 
-class Icon {
+class SVG {
 public:
-  ~Icon() {
+  ~SVG() {
     if (m_initialized && m_tex)
       SDL_DestroyTexture(m_tex);
   }
 
-  Icon() : m_initialized(false) {}
+  SVG() : m_initialized(false) {}
 
-  Icon(SDL_Renderer* renderer, const char* path, float size,
-       SDL_Color color = {255, 255, 255, 255}) {
+  SVG(SDL_Renderer* renderer, const char* path, Vec2 size, SDL_Color color) {
     SDL_IOStream* ops = SDL_IOFromFile(path, "rb");
     if (!ops)
       throw Error(SDL_GetError());
 
-    SDL_Surface* surf = IMG_LoadSizedSVG_IO(ops, size, size);
+    SDL_Surface* surf = IMG_LoadSizedSVG_IO(ops, size.x, size.y);
     m_tex = SDL_CreateTextureFromSurface(renderer, surf);
     m_size = size;
     m_initialized = true;
@@ -58,45 +58,39 @@ public:
     SDL_SetTextureColorMod(m_tex, color.r, color.g, color.b);
   }
 
-  // Disable copying
-  Icon(const Icon&) = delete;
-  Icon& operator=(const Icon&) = delete;
+  SVG(const SVG&) = delete;
+  SVG& operator=(const SVG&) = delete;
 
-  Icon(Icon&& other) noexcept { // Move constructor
-    m_tex = other.m_tex;
-    m_size = other.m_size;
-    m_initialized = other.m_initialized;
-    other.m_tex = nullptr;
-    other.m_initialized = false;
+  SVG(SVG&& other) noexcept {
+    m_tex = std::exchange(other.m_tex, nullptr);
+    m_size = std::exchange(other.m_size, {0, 0});
+    m_initialized = std::exchange(other.m_initialized, false);
   }
 
-  Icon& operator=(Icon&& other) noexcept { // Move assignment operator
+  SVG& operator=(SVG&& other) noexcept {
     if (this != &other) {
       if (m_initialized)
         SDL_DestroyTexture(m_tex);
 
-      m_tex = other.m_tex;
-      m_size = other.m_size;
-      m_initialized = other.m_initialized;
-
-      other.m_tex = nullptr;
-      other.m_initialized = false;
+      m_tex = std::exchange(other.m_tex, nullptr);
+      m_size = std::exchange(other.m_size, {0, 0});
+      m_initialized = std::exchange(other.m_initialized, false);
     }
     return *this;
   }
 
-  float size() { return m_size; }
+  Vec2 size() { return m_size; }
 
   void render(SDL_Renderer* renderer, Vec2 p) {
     if (!m_initialized)
       return;
-    SDL_FRect icon_rect = {.x = p.x, .y = p.y, .w = m_size, .h = m_size};
+    SDL_FRect icon_rect = {.x = p.x, .y = p.y, .w = m_size.x, .h = m_size.y};
     SDL_RenderTexture(renderer, m_tex, nullptr, &icon_rect);
   }
 
 private:
   bool m_initialized;
-  float m_size;
+  Vec2 m_size;
   SDL_Texture* m_tex;
 };
 
@@ -111,27 +105,26 @@ public:
     m_label_size = m_font->text_size(label);
   }
 
-  // NOTE: taking ownership of the temporary icon object
-  void set_icon(const char* path, float size, SDL_Color color = {255, 255, 255, 255}) {
-    m_icon = Icon(m_renderer, path, size, color);
+  void set_icon(const char* path, Vec2 size, SDL_Color color = {255, 255, 255, 255}) {
+    m_icon = SVG(m_renderer, path, size, color);
     m_icon_size = size;
     m_have_icon = true;
   }
 
   Vec2 size() {
-    return {m_icon_size + m_spacing + m_label_size.x,
-            std::max(m_icon_size, m_label_size.y)};
+    return {m_icon_size.x + m_spacing + m_label_size.x,
+            std::max(m_icon_size.x, m_label_size.y)};
   }
 
   void render(Vec2 p, Cursor& cursor) {
     cursor.update(p, size());
 
     // Vertically center the icon and label with each other
-    bool icon_larger = m_icon_size >= m_label_size.y;
-    Vec2 icon_offset = {0, icon_larger ? 0.0f : (m_label_size.y - m_icon_size) / 2.0f};
+    bool icon_larger = m_icon_size.y >= m_label_size.y;
+    Vec2 icon_offset = {0, icon_larger ? 0.0f : (m_label_size.y - m_icon_size.y) / 2.0f};
     Vec2 label_offset = {
-        m_have_icon ? m_spacing + m_icon_size : m_spacing,
-        icon_larger ? (m_icon_size - m_label_size.y) / 2.0f : 0.0f,
+        m_have_icon ? m_spacing + m_icon_size.x : m_spacing,
+        icon_larger ? (m_icon_size.y - m_label_size.y) / 2.0f : 0.0f,
     };
 
     if (m_have_icon)
@@ -141,8 +134,8 @@ public:
   }
 
 private:
-  Icon m_icon;
-  float m_icon_size;
+  SVG m_icon;
+  Vec2 m_icon_size;
   bool m_have_icon;
 
   std::string m_label;

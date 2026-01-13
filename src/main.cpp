@@ -1,5 +1,6 @@
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_main.h>
+#include <SDL3/SDL_render.h>
 #include <SDL3_image/SDL_image.h>
 
 #include "transcriber.h"
@@ -44,10 +45,10 @@ int main() {
     FontCache font(renderer, "../assets/Roboto-Regular.ttf", 18, {255, 255, 255, 255});
 
     Button copy(renderer, &font);
-    copy.set_icon("../assets/icons/copy.svg", 32);
+    copy.set_icon("../assets/icons/copy.svg", {28, 28});
 
     Button save(renderer, &font);
-    save.set_icon("../assets/icons/save.svg", 32);
+    save.set_icon("../assets/icons/save.svg", {28, 28});
 
     Cursor cursor;
 
@@ -57,8 +58,9 @@ int main() {
     float area_height = 100.0f;
     float area_width = (float)window_width / 1.5f;
     float area_padding = (window_width - area_width) / 2.0f;
+    float bottom_padding = 50;
     SDL_FRect bar_rect = {.x = window_width - area_padding,
-                          .y = window_height - (area_height / 2.0f),
+                          .y = window_height - (area_height / 2.0f) - bottom_padding,
                           .w = 3,
                           .h = 80};
 
@@ -81,15 +83,24 @@ int main() {
       SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
       SDL_RenderClear(renderer);
 
-      copy.render({window_width - copy.size().x, 0}, cursor);
-      save.render({window_width - save.size().x, copy.size().y + 25}, cursor);
+      copy.render({window_width - copy.size().x, 50}, cursor);
+      save.render({window_width - save.size().x, 95}, cursor);
+
+      SDL_FRect rect = {.x = 50,
+                        .y = 50,
+                        .w = (float)window_width - 100,
+                        .h = (float)window_height / 1.5f};
+      SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);
+      SDL_RenderRect(renderer, &rect);
+      SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
 
       // TODO: define a text editing area (that can be read only toggled)
       auto lines = engine.get_transcript();
       if (lines.size() == 0)
-        font.render("Capturing...", {0.0f, 0.0f}); // TODO: add nice cetered animation
+        font.render("Capturing...", {65.0f, 65.0f}); // TODO: add nice cetered animation
       for (int i = 0; i < lines.size(); i++) {
-        font.render(lines[i], {0.0f, 20.0f * i}); // TODO: how to determine the proper y?
+        font.render(lines[i],
+                    {65.0f, 65.0f + 20.0f * i}); // TODO: how to determine the proper y?
       }
 
       std::vector<float> amplitudes = engine.get_normalized_waveform();
