@@ -3,6 +3,7 @@
 #include <SDL3/SDL_render.h>
 #include <SDL3_image/SDL_image.h>
 
+#include "layout.h"
 #include "transcriber.h"
 #include "ui.h"
 
@@ -64,6 +65,8 @@ int main() {
                           .w = 3,
                           .h = 80};
 
+    DemoContainer demo;
+
     while (running) {
       while (SDL_PollEvent(&event)) {
         bool done = event.type == SDL_EVENT_QUIT ||
@@ -86,13 +89,7 @@ int main() {
       copy.render({window_width - copy.size().x, 50}, cursor);
       save.render({window_width - save.size().x, 95}, cursor);
 
-      SDL_FRect rect = {.x = 50,
-                        .y = 50,
-                        .w = (float)window_width - 100,
-                        .h = (float)window_height / 1.5f};
-      SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);
-      SDL_RenderRect(renderer, &rect);
-      SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
+      demo.render(renderer, {0, 0});
 
       // TODO: define a text editing area (that can be read only toggled)
       auto lines = engine.get_transcript();
