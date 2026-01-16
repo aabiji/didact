@@ -2,10 +2,125 @@
 #include <SDL3/SDL_main.h>
 #include <SDL3/SDL_render.h>
 #include <SDL3_image/SDL_image.h>
+#include <utility>
 
-#include "layout.h"
+#include "error.h"
 #include "transcriber.h"
-#include "ui.h"
+
+void draw_waveform_visualization(SDL_Renderer* renderer, std::vector<float>& amplitudes,
+                                 float window_width, float window_height) {
+  float area_height = 100.0f;
+  float area_width = window_width / 1.5f;
+  float area_padding = (window_width - area_width) / 2.0f;
+  float bottom_padding = 50;
+  SDL_FRect bar_rect = {.x = window_width - area_padding,
+                        .y = window_height - (area_height / 2.0f) - bottom_padding,
+                        .w = 3,
+                        .h = 80};
+
+  for (int i = amplitudes.size() - 1; i >= 0; i--) { // from newest to oldest data
+    SDL_FRect rect;
+    rect.w = bar_rect.w;
+    rect.h = amplitudes[i] * bar_rect.h;
+    rect.x = bar_rect.x - ((amplitudes.size() - i) * (rect.w * 2));
+    rect.y = bar_rect.y - rect.h / 2.0f;
+    if (rect.x < area_padding)
+      break;
+
+    SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);
+    SDL_RenderFillRect(renderer, &rect);
+  }
+}
+
+struct Vec2 {
+  float x, y;
+};
+
+class Cursor {
+public:
+  Cursor() {
+    m_default = SDL_CreateSystemCursor(SDL_SYSTEM_CURSOR_DEFAULT);
+    m_pointer = SDL_CreateSystemCursor(SDL_SYSTEM_CURSOR_POINTER);
+  }
+
+  ~Cursor() {
+    SDL_DestroyCursor(m_default);
+    SDL_DestroyCursor(m_pointer);
+  }
+
+  void update(Vec2 pos, Vec2 size) {
+    float mouse_x = 0, mouse_y = 0;
+    SDL_GetMouseState(&mouse_x, &mouse_y);
+
+    bool x_inside = mouse_x >= pos.x && mouse_x <= pos.x + size.x;
+    bool y_inside = mouse_y >= pos.y && mouse_y <= pos.y + size.y;
+    SDL_SetCursor(x_inside && y_inside ? m_pointer : m_default);
+  }
+
+private:
+  SDL_Cursor* m_default;
+  SDL_Cursor* m_pointer;
+};
+
+class SVG {
+public:
+  ~SVG() {
+    if (m_initialized && m_tex)
+      SDL_DestroyTexture(m_tex);
+  }
+
+  SVG() : m_initialized(false) {}
+
+  SVG(SDL_Renderer* renderer, const char* path, Vec2 size, SDL_Color color) {
+    SDL_IOStream* ops = SDL_IOFromFile(path, "rb");
+    if (!ops)
+      throw Error(SDL_GetError());
+
+    SDL_Surface* surf = IMG_LoadSizedSVG_IO(ops, size.x, size.y);
+    m_tex = SDL_CreateTextureFromSurface(renderer, surf);
+    m_size = size;
+    m_initialized = true;
+    SDL_DestroySurface(surf);
+
+    // NOTE: This only works if the original svg is white
+    SDL_SetTextureColorMod(m_tex, color.r, color.g, color.b);
+  }
+
+  SVG(const SVG&) = delete;
+  SVG& operator=(const SVG&) = delete;
+
+  SVG(SVG&& other) noexcept {
+    m_tex = std::exchange(other.m_tex, nullptr);
+    m_size = std::exchange(other.m_size, {0, 0});
+    m_initialized = std::exchange(other.m_initialized, false);
+  }
+
+  SVG& operator=(SVG&& other) noexcept {
+    if (this != &other) {
+      if (m_initialized)
+        SDL_DestroyTexture(m_tex);
+
+      m_tex = std::exchange(other.m_tex, nullptr);
+      m_size = std::exchange(other.m_size, {0, 0});
+      m_initialized = std::exchange(other.m_initialized, false);
+    }
+    return *this;
+  }
+
+  Vec2 size() { return m_size; }
+
+  void render(SDL_Renderer* renderer, Vec2 p) {
+    if (!m_initialized)
+      return;
+    SDL_FRect icon_rect = {.x = p.x, .y = p.y, .w = m_size.x, .h = m_size.y};
+    SDL_RenderTexture(renderer, m_tex, nullptr, &icon_rect);
+  }
+
+private:
+  bool m_initialized;
+  Vec2 m_size;
+  SDL_Texture* m_tex;
+};
 
 int main() {
   SDL_Window* window = nullptr;
@@ -43,29 +158,9 @@ int main() {
       throw Error(SDL_GetError());
     SDL_SetRenderVSync(renderer, 1);
 
-    FontCache font(renderer, "../assets/Roboto-Regular.ttf", 18, {255, 255, 255, 255});
-
-    Button copy(renderer, &font);
-    copy.set_icon("../assets/icons/copy.svg", {28, 28});
-
-    Button save(renderer, &font);
-    save.set_icon("../assets/icons/save.svg", {28, 28});
-
     Cursor cursor;
-
     SDL_Event event;
     bool running = true;
-
-    float area_height = 100.0f;
-    float area_width = (float)window_width / 1.5f;
-    float area_padding = (window_width - area_width) / 2.0f;
-    float bottom_padding = 50;
-    SDL_FRect bar_rect = {.x = window_width - area_padding,
-                          .y = window_height - (area_height / 2.0f) - bottom_padding,
-                          .w = 3,
-                          .h = 80};
-
-    DemoContainer demo;
 
     while (running) {
       while (SDL_PollEvent(&event)) {
@@ -86,33 +181,8 @@ int main() {
       SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
       SDL_RenderClear(renderer);
 
-      copy.render({window_width - copy.size().x, 50}, cursor);
-      save.render({window_width - save.size().x, 95}, cursor);
-
-      demo.render(renderer, {0, 0});
-
-      // TODO: define a text editing area (that can be read only toggled)
-      auto lines = engine.get_transcript();
-      if (lines.size() == 0)
-        font.render("Capturing...", {65.0f, 65.0f}); // TODO: add nice cetered animation
-      for (int i = 0; i < lines.size(); i++) {
-        font.render(lines[i],
-                    {65.0f, 65.0f + 20.0f * i}); // TODO: how to determine the proper y?
-      }
-
       std::vector<float> amplitudes = engine.get_normalized_waveform();
-      for (int i = amplitudes.size() - 1; i >= 0; i--) {
-        SDL_FRect rect;
-        rect.w = bar_rect.w;
-        rect.h = amplitudes[i] * bar_rect.h;
-        rect.x = bar_rect.x - ((amplitudes.size() - i) * (rect.w * 2));
-        rect.y = bar_rect.y - rect.h / 2.0f;
-        if (rect.x < area_padding)
-          break;
-
-        SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);
-        SDL_RenderFillRect(renderer, &rect);
-      }
+      draw_waveform_visualization(renderer, amplitudes, window_width, window_height);
 
       SDL_RenderPresent(renderer);
     }
