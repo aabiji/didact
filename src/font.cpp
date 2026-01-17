@@ -10,7 +10,7 @@ FontCache::~FontCache() {
   }
 }
 
-FontCache::FontCache(SDL_Renderer* renderer, const char* path, int size,
+void FontCache::init(SDL_Renderer* renderer, const char* path, int size,
                      SDL_Color color) {
   if (!TTF_WasInit())
     TTF_Init();

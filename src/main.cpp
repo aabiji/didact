@@ -3,21 +3,13 @@
 #include <SDL3/SDL_render.h>
 #include <SDL3_image/SDL_image.h>
 #include <SDL3_ttf/SDL_ttf.h>
-
-#define CLAY_IMPLEMENTATION
-#include "clay.h"
-#include "clay_renderer_SDL3.c"
-
-#include <iostream>
 #include <utility>
 
 #include "error.h"
+#include "renderer.h"
 #include "transcriber.h"
 
-// TODO: write our own custom clay renderer (so that we can use the font atlas)
-// TODO: refactor this main file, start building the main ui
-
-void draw_waveform_visualization(SDL_Renderer* renderer, std::vector<float>& amplitudes,
+void draw_waveform_visualization(Renderer& renderer, std::vector<float>& amplitudes,
                                  float window_width, float window_height) {
   float area_height = 100.0f;
   float area_width = window_width / 1.5f;
@@ -37,14 +29,9 @@ void draw_waveform_visualization(SDL_Renderer* renderer, std::vector<float>& amp
     if (rect.x < area_padding)
       break;
 
-    SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);
-    SDL_RenderFillRect(renderer, &rect);
+    renderer.render_rectangle(rect, {255, 255, 255, 255});
   }
 }
-
-struct Vec2 {
-  float x, y;
-};
 
 class Cursor {
 public:
@@ -132,24 +119,6 @@ private:
   SDL_Texture* m_tex;
 };
 
-void clay_error_handler(Clay_ErrorData data) {
-  std::cout << data.errorText.chars << "\n";
-}
-
-static inline Clay_Dimensions
-SDL_MeasureText(Clay_StringSlice text, Clay_TextElementConfig* config, void* userData) {
-  TTF_Font** fonts = (TTF_Font**)userData;
-  TTF_Font* font = fonts[config->fontId];
-  int width, height;
-
-  TTF_SetFontSize(font, config->fontSize);
-  if (!TTF_GetStringSize(font, text.chars, text.length, &width, &height)) {
-    SDL_LogError(SDL_LOG_CATEGORY_ERROR, "Failed to measure text: %s", SDL_GetError());
-  }
-
-  return (Clay_Dimensions){(float)width, (float)height};
-}
-
 // clang-format off
 Clay_RenderCommandArray create_layout() {
   Clay_BeginLayout();
@@ -207,43 +176,9 @@ int main() {
     SDL_SetWindowPosition(window, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED);
     SDL_ShowWindow(window);
 
-    renderer = SDL_CreateRenderer(window, nullptr);
-    if (!renderer)
-      throw Error(SDL_GetError());
-    SDL_SetRenderVSync(renderer, 1);
-
-    TTF_Init();
-    Clay_SDL3RendererData render_data;
-    render_data.textEngine = TTF_CreateRendererTextEngine(render_data.renderer);
-    if (!render_data.textEngine) {
-      SDL_LogError(SDL_LOG_CATEGORY_ERROR,
-                   "Failed to create text engine from renderer: %s", SDL_GetError());
-      return SDL_APP_FAILURE;
-    }
-
-    render_data.fonts = (TTF_Font**)SDL_calloc(1, sizeof(TTF_Font*));
-    if (!render_data.fonts) {
-      SDL_LogError(SDL_LOG_CATEGORY_ERROR,
-                   "Failed to allocate memory for the font array: %s", SDL_GetError());
-      return SDL_APP_FAILURE;
-    }
-
-    TTF_Font* font = TTF_OpenFont("../assets/Roboto-Regular.ttf", 24);
-    if (!font) {
-      SDL_LogError(SDL_LOG_CATEGORY_ERROR, "Failed to load font: %s", SDL_GetError());
-      return SDL_APP_FAILURE;
-    }
-
-    render_data.fonts[0] = font;
-    render_data.renderer = renderer;
-
-    unsigned int memsize = Clay_MinMemorySize();
-    Clay_Arena arena = Clay_CreateArenaWithCapacityAndMemory(memsize, malloc(memsize));
-    Clay_Initialize(arena, {(float)window_width, (float)window_height},
-                    {clay_error_handler, nullptr});
-    Clay_SetMeasureTextFunction(SDL_MeasureText, render_data.fonts);
-
+    Renderer renderer(window, window_width, window_height);
     Cursor cursor;
+
     SDL_Event event;
     bool running = true;
 
@@ -278,28 +213,22 @@ int main() {
         }
       }
 
-      SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
-      SDL_RenderClear(renderer);
+      renderer.clear({0, 0, 0, 255});
 
       auto render_commands = create_layout();
-      SDL_Clay_RenderClayCommands(&render_data, &render_commands);
+      renderer.render_layout(&render_commands);
 
       std::vector<float> amplitudes = engine.get_normalized_waveform();
       draw_waveform_visualization(renderer, amplitudes, window_width, window_height);
 
-      SDL_RenderPresent(renderer);
+      renderer.present();
     }
-
-    TTF_CloseFont(render_data.fonts[0]);
-    SDL_free(render_data.fonts);
-    TTF_DestroyRendererTextEngine(render_data.textEngine);
 
   } catch (const std::runtime_error& error) {
     SDL_Log(error.what(), "\n");
     return -1;
   }
 
-  SDL_DestroyRenderer(renderer);
   SDL_DestroyWindow(window);
   SDL_Quit();
   return 0;

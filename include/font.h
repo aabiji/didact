@@ -16,7 +16,7 @@ struct Glyph {
 class FontCache {
 public:
   ~FontCache();
-  FontCache(SDL_Renderer* renderer, const char* path, int size, SDL_Color color);
+  void init(SDL_Renderer* renderer, const char* path, int size, SDL_Color color);
 
   void render(std::string str, Vec2 position);
   Vec2 text_size(std::string str);

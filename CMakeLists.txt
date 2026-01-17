@@ -81,6 +81,7 @@ add_executable(${PROJECT_NAME}
     src/main.cpp
     src/audio.cpp
     src/font.cpp
+    src/renderer.cpp
     src/speech.cpp
     src/transcriber.cpp
 )
